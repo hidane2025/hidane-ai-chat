@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ヒダネ AI社員チャット</title>
+    <link rel="stylesheet" href="/static/css/chat.css">
+</head>
+<body>
+    <!-- サイドバー -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">🔥 ヒダネ AI</div>
+            <button class="sidebar-toggle" id="sidebarClose">✕</button>
+        </div>
+        <div class="channel-list" id="channelList">
+            <!-- JS で動的生成 -->
+        </div>
+        <div class="sidebar-footer">
+            <div class="mode-indicator" id="modeIndicator">
+                <span class="mode-dot"></span>
+                <span>接続確認中...</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- メインエリア -->
+    <main class="main-area">
+        <!-- ヘッダー -->
+        <header class="chat-header">
+            <button class="sidebar-toggle-mobile" id="sidebarOpen">☰</button>
+            <div class="current-employee" id="currentEmployee">
+                <img class="header-avatar" id="headerAvatar" src="" alt="">
+                <div class="header-info">
+                    <span class="header-name" id="headerName">自動振り分け</span>
+                    <span class="header-role" id="headerRole">メッセージ内容に応じて最適な社員が対応</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn-auto active" id="btnAutoRoute" title="自動振り分けモード">
+                    🤖 自動振り分け ON
+                </button>
+            </div>
+        </header>
+
+        <!-- チャットエリア -->
+        <div class="chat-area" id="chatArea">
+            <div class="welcome-message" id="welcomeMessage">
+                <div class="welcome-icon">🔥</div>
+                <h2 id="welcomeTitle">ヒダネ AI社員チャット</h2>
+                <p id="welcomeDesc">メッセージを送信すると<br>内容に応じて最適なAI社員が自動で対応します。</p>
+                <div class="quick-actions">
+                    <button class="quick-btn" data-msg="今週の営業進捗を教えて">📊 営業進捗</button>
+                    <button class="quick-btn" data-msg="TikTok台本を作って">🎬 TikTok台本</button>
+                    <button class="quick-btn" data-msg="助成金の申請状況は？">💰 助成金確認</button>
+                    <button class="quick-btn" data-msg="提案書を準備して">📝 提案書作成</button>
+                    <button class="quick-btn" data-msg="DMリストを作成して">📨 DMリスト</button>
+                    <button class="quick-btn" data-msg="今月のKPIレポート">📈 KPIレポート</button>
+                </div>
+            </div>
+            <div class="messages" id="messages"></div>
+        </div>
+
+        <!-- 入力エリア -->
+        <div class="input-area">
+            <div class="routing-preview" id="routingPreview" style="display:none;">
+                <span class="route-badge" id="routeBadge"></span>
+                <span class="route-text" id="routeText"></span>
+            </div>
+            <div class="input-wrapper">
+                <textarea class="message-input" id="messageInput" placeholder="メッセージを入力..." rows="1"></textarea>
+                <button class="send-btn" id="sendBtn" disabled>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>
