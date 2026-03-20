@@ -1,6 +1,7 @@
 /**
  * ヒダネ AI社員チャット - フロントエンド
  * チャンネル別会話履歴 + 部署グループチャット対応
+ * SSEストリーミング + サジェスチョン + エクスポート統合
  */
 
 // ========== State ==========
@@ -12,6 +13,7 @@ const state = {
     currentChannel: null,   // "emp_ソウ" | "dept_営業部" | "auto"
     autoRoute: false,
     sending: false,
+    activeStream: null,     // 現在アクティブなChatStreamインスタンス
 };
 
 // ========== DOM ==========
@@ -47,6 +49,8 @@ async function init() {
     renderSidebar();
     setupEventListeners();
     checkApiStatus();
+    initExportMenu();
+    injectStreamingStyles();
     // デフォルトで自動振り分けチャンネルを選択
     switchChannel("auto");
 }
@@ -133,6 +137,56 @@ async function checkApiStatus() {
     }
 }
 
+// ========== Export Menu Integration ==========
+function initExportMenu() {
+    const headerActions = document.querySelector(".header-actions");
+    if (headerActions && typeof createExportMenu === "function") {
+        createExportMenu(headerActions);
+    }
+}
+
+// ========== Streaming Styles ==========
+function injectStreamingStyles() {
+    const style = document.createElement("style");
+    style.textContent = `
+        .error-bubble {
+            background: rgba(255, 59, 48, 0.1) !important;
+            border-left-color: #FF3B30 !important;
+            color: var(--text-primary);
+        }
+        .retry-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: var(--radius-sm, 6px);
+            padding: 6px 14px;
+            margin-top: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .retry-btn:hover {
+            opacity: 0.85;
+        }
+        .msg-bubble.streaming {
+            border-left-style: solid;
+        }
+        .msg-bubble.streaming::after {
+            content: "▍";
+            animation: blink-cursor 0.8s step-end infinite;
+            color: var(--text-secondary);
+        }
+        @keyframes blink-cursor {
+            50% { opacity: 0; }
+        }
+        .suggestions-area {
+            padding: 4px 16px 8px;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
 // ========== Sidebar Render ==========
 function renderSidebar() {
     let html = "";
@@ -210,6 +264,12 @@ function renderSidebar() {
 
 // ========== Channel Switching ==========
 function switchChannel(channelId) {
+    // アクティブなストリーミングがあれば中断
+    if (state.activeStream) {
+        state.activeStream.abort();
+        state.activeStream = null;
+    }
+
     state.currentChannel = channelId;
     const ch = state.channels[channelId];
     if (!ch) return;
@@ -250,6 +310,9 @@ function switchChannel(channelId) {
         card.classList.toggle("active", card.dataset.channel === channelId);
     });
 
+    // サジェスチョンをクリア
+    clearSuggestionsContainer();
+
     dom.messageInput.focus();
 }
 
@@ -282,27 +345,267 @@ function renderMessages(channelId) {
     scrollToBottom();
 }
 
-// ========== Chat ==========
-async function sendMessage() {
-    const text = dom.messageInput.value.trim();
-    if (!text || state.sending) return;
+// ========== Suggestions Integration ==========
 
-    const channelId = state.currentChannel;
+/**
+ * サジェスチョンコンテナを取得（なければ作成）
+ */
+function getSuggestionsContainer() {
+    let container = document.getElementById("suggestionsContainer");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "suggestionsContainer";
+        container.className = "suggestions-area";
+        // messages の直後に挿入
+        dom.messages.parentNode.insertBefore(container, dom.messages.nextSibling);
+    }
+    return container;
+}
+
+/**
+ * サジェスチョンをクリア
+ */
+function clearSuggestionsContainer() {
+    const container = document.getElementById("suggestionsContainer");
+    if (container && typeof clearSuggestions === "function") {
+        clearSuggestions(container);
+    }
+}
+
+/**
+ * AI応答後にサジェスチョンを表示
+ */
+function showSuggestionsAfterResponse() {
+    if (typeof renderSuggestions !== "function") return;
+
+    setTimeout(() => {
+        const container = getSuggestionsContainer();
+        const ch = state.channels[state.currentChannel];
+        if (!ch) return;
+
+        const channelType = ch.type === "employee" ? "employee" : "auto";
+        const empName = ch.type === "employee" ? ch.name : null;
+        renderSuggestions(channelType, empName, container);
+    }, 500);
+}
+
+// ========== Streaming Support ==========
+
+/**
+ * ストリーミング用のメッセージバブルを作成して返す
+ * @param {object} streamData - { employee, employee_color, avatar, employee_role }
+ * @returns {HTMLElement}
+ */
+function createStreamBubble(streamData) {
+    const div = document.createElement("div");
+    div.className = "message ai";
+    const time = new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+
+    const employee = streamData.employee || "ソウ";
+    const employeeColor = streamData.employee_color || "#6C5CE7";
+    const avatar = streamData.avatar || "桐生ソウ_アバター.png";
+    const employeeRole = streamData.employee_role || "";
+
+    div.innerHTML = `
+        <img class="msg-avatar" src="/static/avatars/${avatar}" alt="${employee}"
+             onerror="this.style.display='none'">
+        <div class="msg-content">
+            <div class="msg-header">
+                <span class="msg-name" style="color:${employeeColor}">${employee}</span>
+                ${employeeRole ? `<span class="msg-role-tag">${employeeRole}</span>` : ''}
+                <span class="msg-time">${time}</span>
+            </div>
+            <div class="msg-bubble streaming" style="border-left-color:${employeeColor}"></div>
+        </div>
+    `;
+
+    return div;
+}
+
+/**
+ * エラー表示（リトライボタン付き）
+ * @param {string} text - エラーメッセージ
+ * @param {Function|null} retryFn - 再試行関数
+ */
+function showError(text, retryFn) {
+    const div = document.createElement("div");
+    div.className = "message error";
+    div.innerHTML = `
+        <div class="msg-content">
+            <div class="msg-bubble error-bubble">
+                <span>${escapeHtml(text)}</span>
+                ${retryFn ? '<button class="retry-btn">再試行</button>' : ''}
+            </div>
+        </div>
+    `;
+
+    if (retryFn) {
+        const btn = div.querySelector(".retry-btn");
+        btn.addEventListener("click", () => {
+            div.remove();
+            retryFn();
+        });
+    }
+
+    dom.messages.appendChild(div);
+    scrollToBottom();
+}
+
+/**
+ * SSEストリーミングでメッセージを送信
+ * @param {string} text - ユーザーメッセージ
+ * @param {string} channelId - チャンネルID
+ * @param {object} ch - チャンネルオブジェクト
+ * @param {HTMLElement} typingEl - タイピングインジケーター要素
+ */
+function sendViaStreaming(text, channelId, ch, typingEl) {
+    const stream = new ChatStream();
+    state.activeStream = stream;
+
+    let streamBubble = null;
+    let fullText = "";
+    let streamMeta = {
+        employee: null,
+        employee_color: null,
+        avatar: null,
+        employee_role: null,
+    };
+
+    stream.on("stream-start", () => {
+        // stream-start はconnect直後に発火するのでバブルは最初のトークンで作成
+    });
+
+    stream.on("stream-token", (data) => {
+        // 最初のトークンでバブルを作成
+        if (!streamBubble) {
+            typingEl.remove();
+
+            // トークンから社員情報を取得
+            streamMeta = {
+                employee: data.employee || streamMeta.employee || "ソウ",
+                employee_color: data.employee_color || streamMeta.employee_color || "#6C5CE7",
+                avatar: data.avatar || streamMeta.avatar || "桐生ソウ_アバター.png",
+                employee_role: data.employee_role || streamMeta.employee_role || "",
+            };
+
+            streamBubble = createStreamBubble(streamMeta);
+            dom.messages.appendChild(streamBubble);
+        }
+
+        // 社員情報が途中で届く場合を更新
+        if (data.employee && data.employee !== streamMeta.employee) {
+            streamMeta = {
+                ...streamMeta,
+                employee: data.employee,
+                employee_color: data.employee_color || streamMeta.employee_color,
+                avatar: data.avatar || streamMeta.avatar,
+                employee_role: data.employee_role || streamMeta.employee_role,
+            };
+            const nameEl = streamBubble.querySelector(".msg-name");
+            if (nameEl) {
+                nameEl.textContent = streamMeta.employee;
+                nameEl.style.color = streamMeta.employee_color;
+            }
+        }
+
+        // テキスト蓄積＋表示更新
+        fullText += (data.token || "");
+        const bubbleContent = streamBubble.querySelector(".msg-bubble");
+        if (bubbleContent) {
+            bubbleContent.innerHTML = renderMessageContent(fullText);
+            // streaming クラスを維持（カーソル表示）
+            bubbleContent.classList.add("streaming");
+        }
+        scrollToBottom();
+    });
+
+    stream.on("stream-pdf", (data) => {
+        // PDF添付がストリーム中に届いた場合、テキストに追加
+        const pdfTag = `[PDF:${data.filename}:${data.title}]`;
+        fullText += pdfTag;
+        if (streamBubble) {
+            const bubbleContent = streamBubble.querySelector(".msg-bubble");
+            if (bubbleContent) {
+                bubbleContent.innerHTML = renderMessageContent(fullText);
+                bubbleContent.classList.add("streaming");
+            }
+            scrollToBottom();
+        }
+    });
+
+    stream.on("stream-done", (data) => {
+        state.activeStream = null;
+
+        // 最終テキストで更新
+        const finalText = data.full_text || fullText;
+
+        if (streamBubble) {
+            const bubbleContent = streamBubble.querySelector(".msg-bubble");
+            if (bubbleContent) {
+                bubbleContent.innerHTML = renderMessageContent(finalText);
+                bubbleContent.classList.remove("streaming");
+            }
+        } else {
+            // トークンが1つも届かずに完了した場合
+            typingEl.remove();
+        }
+
+        // チャンネル履歴に保存
+        const aiMsg = {
+            type: "ai",
+            text: finalText,
+            data: {
+                message: finalText,
+                employee: streamMeta.employee || "ソウ",
+                employee_color: streamMeta.employee_color || "#6C5CE7",
+                avatar: streamMeta.avatar || "桐生ソウ_アバター.png",
+                employee_role: streamMeta.employee_role || "",
+            },
+        };
+        ch.messages.push(aiMsg);
+        updateSidebarCount(channelId);
+
+        // 送信状態をリセット
+        state.sending = false;
+        dom.sendBtn.disabled = !dom.messageInput.value.trim();
+
+        // サジェスチョン表示
+        showSuggestionsAfterResponse();
+    });
+
+    stream.on("stream-error", (data) => {
+        state.activeStream = null;
+        typingEl.remove();
+
+        // ストリーミング途中でエラーが出た場合、バブルがあれば削除
+        if (streamBubble) {
+            streamBubble.remove();
+            streamBubble = null;
+        }
+
+        console.error("[chat] stream error, falling back to regular API:", data.error);
+
+        // 通常APIにフォールバック
+        fallbackToRegularApi(text, channelId);
+    });
+
+    // 接続パラメータ構築
+    const employee = ch.type === "employee" ? ch.name : null;
+    const options = {};
+    if (ch.type === "department") {
+        options.department = ch.name;
+    }
+
+    stream.connect(text, employee, channelId, options);
+}
+
+/**
+ * 通常API（非ストリーミング）でメッセージを送信（フォールバック用）
+ * @param {string} text - ユーザーメッセージ
+ * @param {string} channelId - チャンネルID
+ */
+async function fallbackToRegularApi(text, channelId) {
     const ch = state.channels[channelId];
-
-    state.sending = true;
-    dom.sendBtn.disabled = true;
-    dom.welcomeMessage.style.display = "none";
-    dom.routingPreview.style.display = "none";
-
-    // ユーザーメッセージ保存＋表示
-    const userMsg = { type: "user", text, data: null };
-    ch.messages.push(userMsg);
-    appendMessageDom("user", text, null);
-    dom.messageInput.value = "";
-    autoResizeTextarea();
-
-    // タイピングインジケーター
     const typingEl = showTyping(channelId);
 
     try {
@@ -328,7 +631,6 @@ async function sendMessage() {
                 }),
             });
         } else {
-            // auto
             res = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -350,20 +652,59 @@ async function sendMessage() {
         // サイドバーのメッセージカウント更新
         updateSidebarCount(channelId);
 
+        // サジェスチョン表示
+        showSuggestionsAfterResponse();
+
     } catch (e) {
         typingEl.remove();
-        const errData = {
-            employee: "ソウ",
-            employee_color: "#6C5CE7",
-            avatar: "桐生ソウ_アバター.png",
-        };
-        const errMsg = { type: "ai", text: "接続エラーが発生しました。", data: errData };
-        ch.messages.push(errMsg);
-        appendMessageDom("ai", errMsg.text, errData);
+
+        // エラー表示（リトライボタン付き）
+        showError("接続エラーが発生しました。", () => {
+            fallbackToRegularApi(text, channelId);
+        });
     }
 
     state.sending = false;
     dom.sendBtn.disabled = !dom.messageInput.value.trim();
+}
+
+// ========== Chat ==========
+async function sendMessage() {
+    const text = dom.messageInput.value.trim();
+    if (!text || state.sending) return;
+
+    const channelId = state.currentChannel;
+    const ch = state.channels[channelId];
+
+    state.sending = true;
+    dom.sendBtn.disabled = true;
+    dom.welcomeMessage.style.display = "none";
+    dom.routingPreview.style.display = "none";
+
+    // サジェスチョンをクリア
+    clearSuggestionsContainer();
+
+    // ユーザーメッセージ保存＋表示
+    const userMsg = { type: "user", text, data: null };
+    ch.messages.push(userMsg);
+    appendMessageDom("user", text, null);
+    dom.messageInput.value = "";
+    autoResizeTextarea();
+
+    // タイピングインジケーター
+    const typingEl = showTyping(channelId);
+
+    // ストリーミング可能か判定（部署チャットは通常APIのまま）
+    const canStream = typeof ChatStream !== "undefined" && ch.type !== "department";
+
+    if (canStream) {
+        // SSEストリーミングで送信
+        sendViaStreaming(text, channelId, ch, typingEl);
+    } else {
+        // 通常API（部署チャットまたはChatStream未ロード時）
+        typingEl.remove();
+        await fallbackToRegularApi(text, channelId);
+    }
 }
 
 function appendMessageDom(type, text, data) {

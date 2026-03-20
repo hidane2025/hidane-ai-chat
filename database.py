@@ -58,6 +58,14 @@ def init_db() -> None:
                 ON usage_logs(session_id);
             CREATE INDEX IF NOT EXISTS idx_usage_company
                 ON usage_logs(company_id);
+
+            CREATE TABLE IF NOT EXISTS user_consents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                consent_type TEXT NOT NULL DEFAULT 'terms',
+                version TEXT NOT NULL DEFAULT '1.0',
+                consented_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
         """)
 
 
@@ -214,6 +222,27 @@ def export_conversation(session_id: str, fmt: str = "json") -> str:
         speaker = m.get("employee_name") or m["role"]
         lines.append(f"[{m['created_at']}] {speaker}: {m['content']}")
     return "\n".join(lines)
+
+
+def record_consent(user_id: str, consent_type: str = "terms", version: str = "1.0") -> dict:
+    """Record user's consent to terms/privacy."""
+    with sqlite3.connect(_db_path()) as conn:
+        conn.execute(
+            "INSERT INTO user_consents (user_id, consent_type, version) VALUES (?, ?, ?)",
+            (user_id, consent_type, version),
+        )
+        conn.commit()
+    return {"user_id": user_id, "consent_type": consent_type, "version": version}
+
+
+def has_consent(user_id: str, consent_type: str = "terms", version: str = "1.0") -> bool:
+    """Check if user has given consent."""
+    with sqlite3.connect(_db_path()) as conn:
+        row = conn.execute(
+            "SELECT id FROM user_consents WHERE user_id = ? AND consent_type = ? AND version = ?",
+            (user_id, consent_type, version),
+        ).fetchone()
+    return row is not None
 
 
 def cleanup_old(days: int = 90) -> int:

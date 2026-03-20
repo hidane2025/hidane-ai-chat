@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, redirect
 from flask_cors import CORS
 
 from employees import (
@@ -26,6 +26,7 @@ from rate_limiter import rate_limit
 from line_handler import handle_line_webhook
 from admin_routes import admin_bp
 from system_prompt import build_system_prompt
+from auth import create_token, authenticate_user, verify_token, require_auth, require_admin, _read_users
 
 app = Flask(__name__)
 
@@ -46,12 +47,48 @@ app.register_blueprint(admin_bp)
 
 
 # ============================================================
+# Auth
+# ============================================================
+
+@app.route("/auth/login", methods=["GET", "POST"])
+def auth_login():
+    if request.method == "GET":
+        return render_template("login.html")
+    data = request.form if request.form else (request.json or {})
+    email = data.get("email", "")
+    password = data.get("password", "")
+    token = authenticate_user(email, password)
+    if not token:
+        if request.form:
+            return render_template("login.html", error="メールアドレスまたはパスワードが正しくありません")
+        return jsonify({"error": "Invalid credentials"}), 401
+    # Read user info for JSON response
+    users = _read_users()
+    user_info = users.get(email, {})
+    if request.form:
+        resp = redirect("/")
+        resp.set_cookie("auth_token", token, httponly=True, samesite="Lax", max_age=86400)
+        return resp
+    return jsonify({"token": token, "user": {"email": email, "role": user_info.get("role", "user")}})
+
+
+@app.route("/auth/logout")
+def auth_logout():
+    resp = redirect("/auth/login")
+    resp.delete_cookie("auth_token")
+    return resp
+
+
+# ============================================================
 # Web Chat UI
 # ============================================================
 
 @app.route("/")
 def index():
     """メインチャットUI"""
+    token = request.cookies.get("auth_token")
+    if not token or not verify_token(token):
+        return redirect("/auth/login")
     return render_template("chat.html")
 
 
@@ -75,6 +112,7 @@ def api_employees():
 
 @app.route("/api/chat", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60)
+@require_auth
 def api_chat():
     """チャットAPI"""
     start_time = time.time()
@@ -121,6 +159,7 @@ def api_chat():
 
 @app.route("/api/chat/stream", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60)
+@require_auth
 def api_chat_stream():
     """SSEストリーミングチャットAPI"""
     data = request.json or {}
@@ -180,6 +219,7 @@ def api_departments():
 
 @app.route("/api/chat/department", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60)
+@require_auth
 def api_chat_department():
     """部署グループチャットAPI"""
     start_time = time.time()
@@ -221,6 +261,7 @@ def api_chat_department():
 
 
 @app.route("/api/history/<channel_id>")
+@require_auth
 def api_history(channel_id):
     """チャネル別の会話履歴を取得（DBから）"""
     history = get_history(channel_id, limit=50)
@@ -228,6 +269,7 @@ def api_history(channel_id):
 
 
 @app.route("/api/export/<session_id>")
+@require_auth
 def api_export(session_id):
     """会話エクスポート"""
     fmt = request.args.get("format", "json")
@@ -283,6 +325,7 @@ def list_files():
 
 @app.route("/api/upload", methods=["POST"])
 @rate_limit(max_requests=10, window_seconds=60)
+@require_auth
 def api_upload():
     """ファイルアップロード（ユーザー→AI社員）"""
     from file_handler import validate_file, save_upload

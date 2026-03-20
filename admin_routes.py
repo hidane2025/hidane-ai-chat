@@ -4,6 +4,7 @@ Flask Blueprintとして実装。app.pyにregister_blueprint()で統合。
 """
 
 from flask import Blueprint, render_template, request, jsonify
+from auth import require_auth, require_admin
 from knowledge_admin import (
     load_custom_knowledge,
     add_faq,
@@ -18,6 +19,7 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
 @admin_bp.route("/")
+@require_admin
 def admin_page():
     """管理画面トップ"""
     return render_template("admin.html")
@@ -26,6 +28,7 @@ def admin_page():
 # ========== ナレッジAPI ==========
 
 @admin_bp.route("/api/knowledge")
+@require_admin
 def api_knowledge():
     """カスタムナレッジ全体を取得"""
     company_id = request.args.get("company_id", "hidane")
@@ -34,6 +37,7 @@ def api_knowledge():
 
 
 @admin_bp.route("/api/knowledge/info", methods=["POST"])
+@require_admin
 def api_add_info():
     """会社情報を追加"""
     body = request.json or {}
@@ -48,6 +52,7 @@ def api_add_info():
 
 
 @admin_bp.route("/api/knowledge/info/<info_id>", methods=["DELETE"])
+@require_admin
 def api_remove_info(info_id):
     """会社情報を削除"""
     company_id = request.args.get("company_id", "hidane")
@@ -56,6 +61,7 @@ def api_remove_info(info_id):
 
 
 @admin_bp.route("/api/knowledge/faq", methods=["POST"])
+@require_admin
 def api_add_faq():
     """FAQを追加"""
     body = request.json or {}
@@ -70,6 +76,7 @@ def api_add_faq():
 
 
 @admin_bp.route("/api/knowledge/faq/<faq_id>", methods=["DELETE"])
+@require_admin
 def api_remove_faq(faq_id):
     """FAQを削除"""
     company_id = request.args.get("company_id", "hidane")
@@ -78,6 +85,7 @@ def api_remove_faq(faq_id):
 
 
 @admin_bp.route("/api/knowledge/employee-note", methods=["POST"])
+@require_admin
 def api_set_employee_note():
     """社員別追加指示を設定"""
     body = request.json or {}
@@ -94,6 +102,7 @@ def api_set_employee_note():
 # ========== ファイルアップロードAPI ==========
 
 @admin_bp.route("/api/upload", methods=["POST"])
+@require_admin
 def api_upload():
     """ファイルアップロード（PDFをAI社員送信可能フォルダに保存）"""
     if "file" not in request.files:
@@ -124,6 +133,7 @@ def api_upload():
 # ========== 利用統計API ==========
 
 @admin_bp.route("/api/stats")
+@require_admin
 def api_stats():
     """利用統計を取得"""
     try:
