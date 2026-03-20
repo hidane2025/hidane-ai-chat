@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>利用規約への同意 - ヒダネ AI社員チャット</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background-color: #0f0f14;
+            color: #e8e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .consent-wrapper {
+            width: 100%;
+            max-width: 520px;
+            padding: 24px;
+        }
+        .logo-section {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .logo-icon {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #6C5CE7, #a855f7);
+            border-radius: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+        .logo-icon svg {
+            width: 28px;
+            height: 28px;
+            fill: #ffffff;
+        }
+        .logo-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 4px;
+        }
+        .logo-subtitle {
+            font-size: 13px;
+            color: #8888a0;
+        }
+        .consent-card {
+            background-color: #16161e;
+            border: 1px solid #2a2a3a;
+            border-radius: 12px;
+            padding: 32px;
+        }
+        .consent-card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        .consent-description {
+            font-size: 13px;
+            color: #9898b0;
+            text-align: center;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        .policy-summary {
+            background-color: #0f0f14;
+            border: 1px solid #2a2a3a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+        .policy-summary::-webkit-scrollbar {
+            width: 6px;
+        }
+        .policy-summary::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .policy-summary::-webkit-scrollbar-thumb {
+            background: #3a3a4a;
+            border-radius: 3px;
+        }
+        .policy-section {
+            margin-bottom: 16px;
+        }
+        .policy-section:last-child {
+            margin-bottom: 0;
+        }
+        .policy-section h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #c8c8d8;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .policy-section h3 .icon {
+            font-size: 16px;
+        }
+        .policy-section ul {
+            list-style: none;
+            padding: 0;
+        }
+        .policy-section li {
+            font-size: 12px;
+            color: #9898b0;
+            padding: 3px 0 3px 16px;
+            position: relative;
+            line-height: 1.5;
+        }
+        .policy-section li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 10px;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: #6C5CE7;
+        }
+        .policy-links {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        .policy-links a {
+            font-size: 13px;
+            color: #6C5CE7;
+            text-decoration: none;
+            transition: opacity 0.2s;
+        }
+        .policy-links a:hover {
+            opacity: 0.8;
+            text-decoration: underline;
+        }
+        .consent-checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .consent-checkbox-wrapper input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #6C5CE7;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .consent-checkbox-wrapper label {
+            font-size: 14px;
+            color: #c8c8d8;
+            cursor: pointer;
+        }
+        .consent-button {
+            width: 100%;
+            padding: 12px;
+            background-color: #6C5CE7;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s, opacity 0.2s;
+        }
+        .consent-button:hover:not(:disabled) {
+            background-color: #5a4bd6;
+        }
+        .consent-button:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+        .consent-button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .error-message {
+            background-color: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 20px;
+            color: #f87171;
+            font-size: 13px;
+            display: none;
+            text-align: center;
+        }
+        .footer-note {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 11px;
+            color: #555566;
+        }
+    </style>
+</head>
+<body>
+    <div class="consent-wrapper">
+        <div class="logo-section">
+            <div class="logo-icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                </svg>
+            </div>
+            <div class="logo-title">ヒダネ AI社員チャット</div>
+            <div class="logo-subtitle">業務を支えるAIパートナー</div>
+        </div>
+
+        <div class="consent-card">
+            <h2>ご利用にあたって</h2>
+            <p class="consent-description">
+                サービスをご利用いただくには、<br>利用規約とプライバシーポリシーへの同意が必要です。
+            </p>
+
+            <div class="policy-summary">
+                <div class="policy-section">
+                    <h3><span class="icon">&#x1F4C4;</span> 利用規約の要点</h3>
+                    <ul>
+                        <li>本サービスは業務支援目的のAIチャットシステムです</li>
+                        <li>AIの回答は参考情報であり、最終判断はご自身で行ってください</li>
+                        <li>不正利用・第三者への転送は禁止されています</li>
+                        <li>アカウントの管理責任はご利用者にあります</li>
+                    </ul>
+                </div>
+                <div class="policy-section">
+                    <h3><span class="icon">&#x1F512;</span> プライバシーポリシーの要点</h3>
+                    <ul>
+                        <li>チャット内容はサービス改善のために保存されます</li>
+                        <li>個人情報は法令に基づき適切に管理されます</li>
+                        <li>第三者への提供は法令上の要請を除き行いません</li>
+                        <li>データの削除はお問い合わせにて対応いたします</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="policy-links">
+                <a href="/terms" target="_blank">利用規約の全文を読む</a>
+                <a href="/privacy" target="_blank">プライバシーポリシーの全文を読む</a>
+            </div>
+
+            <div class="error-message" id="errorMessage"></div>
+
+            <div class="consent-checkbox-wrapper" onclick="toggleConsent(event)">
+                <input type="checkbox" id="consentCheck">
+                <label for="consentCheck">利用規約とプライバシーポリシーに同意します</label>
+            </div>
+
+            <button class="consent-button" id="consentBtn" disabled onclick="submitConsent()">
+                同意して利用開始
+            </button>
+
+            <div class="footer-note">
+                同意内容はいつでもお問い合わせにて確認・撤回できます
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleConsent(event) {
+            if (event.target.tagName === 'INPUT') return;
+            var checkbox = document.getElementById('consentCheck');
+            checkbox.checked = !checkbox.checked;
+            updateButton();
+        }
+
+        document.getElementById('consentCheck').addEventListener('change', updateButton);
+
+        function updateButton() {
+            var btn = document.getElementById('consentBtn');
+            btn.disabled = !document.getElementById('consentCheck').checked;
+        }
+
+        function submitConsent() {
+            var btn = document.getElementById('consentBtn');
+            var errorEl = document.getElementById('errorMessage');
+            btn.disabled = true;
+            btn.textContent = '処理中...';
+            errorEl.style.display = 'none';
+
+            fetch('/api/consent/agree', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+            })
+            .then(function(response) {
+                if (!response.ok) {
+                    throw new Error('同意の記録に失敗しました');
+                }
+                return response.json();
+            })
+            .then(function() {
+                window.location.href = '/';
+            })
+            .catch(function(err) {
+                errorEl.textContent = err.message || 'エラーが発生しました。もう一度お試しください。';
+                errorEl.style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = '同意して利用開始';
+            });
+        }
+    </script>
+</body>
+</html>

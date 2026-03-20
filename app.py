@@ -20,13 +20,13 @@ from employees import (
 )
 from knowledge import build_knowledge_context
 from knowledge_admin import build_custom_context
-from database import init_db, save_message, get_history, log_usage, export_conversation
+from database import init_db, save_message, get_history, log_usage, export_conversation, has_consent, record_consent
 from streaming import stream_claude_response, make_sse_response
 from rate_limiter import rate_limit
 from line_handler import handle_line_webhook
 from admin_routes import admin_bp
 from system_prompt import build_system_prompt
-from auth import create_token, authenticate_user, verify_token, require_auth, require_admin, _read_users
+from auth import create_token, authenticate_user, verify_token, require_auth, require_admin, _read_users, _extract_token
 
 app = Flask(__name__)
 
@@ -83,13 +83,28 @@ def auth_logout():
 # Web Chat UI
 # ============================================================
 
+CONSENT_VERSION = "1.0"
+
+
 @app.route("/")
 def index():
     """メインチャットUI"""
     token = request.cookies.get("auth_token")
-    if not token or not verify_token(token):
+    payload = verify_token(token) if token else None
+    if not payload:
         return redirect("/auth/login")
+    user_id = payload.get("user_id", "")
+    if not _user_has_full_consent(user_id):
+        return redirect("/consent")
     return render_template("chat.html")
+
+
+def _user_has_full_consent(user_id: str) -> bool:
+    """Check if user has consented to both terms and privacy policy."""
+    return (
+        has_consent(user_id, "terms", CONSENT_VERSION)
+        and has_consent(user_id, "privacy", CONSENT_VERSION)
+    )
 
 
 @app.route("/terms")
@@ -102,6 +117,49 @@ def terms():
 def privacy():
     """プライバシーポリシー"""
     return render_template("privacy.html")
+
+
+@app.route("/consent")
+def consent_page():
+    """同意画面（認証済み・未同意ユーザー向け）"""
+    token = request.cookies.get("auth_token")
+    payload = verify_token(token) if token else None
+    if not payload:
+        return redirect("/auth/login")
+    user_id = payload.get("user_id", "")
+    if _user_has_full_consent(user_id):
+        return redirect("/")
+    return render_template("consent.html")
+
+
+@app.route("/api/consent/status")
+def api_consent_status():
+    """現在のユーザーの同意状況を返す"""
+    token = _extract_token()
+    payload = verify_token(token) if token else None
+    if not payload:
+        return jsonify({"error": "Authentication required"}), 401
+    user_id = payload.get("user_id", "")
+    return jsonify({
+        "terms": has_consent(user_id, "terms", CONSENT_VERSION),
+        "privacy": has_consent(user_id, "privacy", CONSENT_VERSION),
+        "version": CONSENT_VERSION,
+    })
+
+
+@app.route("/api/consent/agree", methods=["POST"])
+def api_consent_agree():
+    """ユーザーの同意を記録する"""
+    token = _extract_token()
+    payload = verify_token(token) if token else None
+    if not payload:
+        return jsonify({"error": "Authentication required"}), 401
+    user_id = payload.get("user_id", "")
+    if not has_consent(user_id, "terms", CONSENT_VERSION):
+        record_consent(user_id, "terms", CONSENT_VERSION)
+    if not has_consent(user_id, "privacy", CONSENT_VERSION):
+        record_consent(user_id, "privacy", CONSENT_VERSION)
+    return jsonify({"status": "ok", "user_id": user_id})
 
 
 @app.route("/api/employees")
