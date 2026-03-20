@@ -19,6 +19,7 @@ from employees import (
     EMPLOYEES, route_message, get_employee, get_all_employees,
     get_departments, get_department_responder, DEPARTMENTS,
 )
+from knowledge import build_knowledge_context
 
 app = Flask(__name__)
 CORS(app)
@@ -65,7 +66,7 @@ def api_chat():
 
     # API呼び出し or モックレスポンス
     if ANTHROPIC_API_KEY:
-        response_text = call_claude_api(message, emp, session_id)
+        response_text = call_claude_api(message, emp, session_id, employee_name)
     else:
         response_text = generate_mock_response(message, emp)
 
@@ -123,7 +124,7 @@ def api_chat_department():
     emp = get_employee(responder_name)
 
     if ANTHROPIC_API_KEY:
-        response_text = call_claude_api(message, emp, session_id)
+        response_text = call_claude_api(message, emp, session_id, employee_name)
     else:
         response_text = generate_mock_response(message, emp)
 
@@ -201,7 +202,7 @@ def handle_line_message(event: dict):
 
     # レスポンス生成
     if ANTHROPIC_API_KEY:
-        response_text = call_claude_api(text, emp, f"line_{user_id}")
+        response_text = call_claude_api(text, emp, f"line_{user_id}", employee_name)
     else:
         response_text = generate_mock_response(text, emp)
 
@@ -238,7 +239,7 @@ def reply_to_line(reply_token: str, text: str):
 # Claude API 呼び出し
 # ============================================================
 
-def call_claude_api(message: str, employee: dict, session_id: str) -> str:
+def call_claude_api(message: str, employee: dict, session_id: str, employee_name: str = "") -> str:
     """Claude APIを使ってAI社員として応答"""
     import urllib.request
 
@@ -259,24 +260,32 @@ def call_claude_api(message: str, employee: dict, session_id: str) -> str:
         for v in EMPLOYEES.values()
     )
 
+    # 社員別の事業知識を注入（employee_nameが渡されない場合はfull_nameから抽出）
+    name_key = employee_name or employee.get("full_name", "").split()[-1]
+    knowledge_context = build_knowledge_context(name_key)
+
     system = (
         f"{employee['system_prompt']}\n\n"
         "【重要：あなたの立場】\n"
-        "あなたは株式会社ヒダネの社内チャットシステム上で動作するAI社員です。"
-        "話し相手は社長の中野祐揮（なかの・ゆうき）さんです。「中野さん」と呼んでください。"
-        "あなたへのメッセージは業務指示・質問・雑談・フィードバックなど様々です。"
-        "メッセージの内容をよく読み、的確に応答してください。"
+        "あなたは株式会社ヒダネの社内チャットシステム上で動作するAI社員です。\n"
+        "話し相手は社長の中野祐揮（なかの・ゆうき）さんです。「中野さん」と呼んでください。\n"
+        "あなたへのメッセージは業務指示・質問・雑談・フィードバックなど様々です。\n"
+        "メッセージの内容をよく読み、的確に応答してください。\n"
         "知らないことは「確認します」と答え、存在しない人名や情報を捏造しないでください。\n\n"
         "【AI社員チーム】\n"
         f"{employee_list}\n"
         "※全員AI社員です。呼ぶときは下の名前（ソウ、リサ、ルナ等）で呼んでください。\n\n"
-        "【会社情報】株式会社ヒダネ（名古屋）代表：中野祐揮。"
-        "法人向けAI活用研修（助成金活用）、AIコンサル、SNS運用代行の3事業。"
-        "研修単価40万円/人/コース（助成金75%で企業負担10万円）。"
-        "6コース準備済み（AI研修3＋動画内製化3）。\n"
-        "【トーンルール】誠実・信用重視。煽らない。「ぜひ」「お得」「今だけ」「特別」「革命的」「最強」は使わない。"
-        "数字は根拠を明記。推測値は「（推定）」を付ける。"
-        "助成金の記載は「活用の可能性」「条件を満たせば申請可能」。"
+        "【トーンルール】\n"
+        "誠実・信用重視。煽らない。「ぜひ」「お得」「今だけ」「特別」「革命的」「最強」は使わない。\n"
+        "数字は根拠を明記。推測値は「（推定）」を付ける。\n"
+        "助成金の記載は「活用の可能性」「条件を満たせば申請可能」。\n\n"
+        "【あなたが把握している事業データ（リアルタイム）】\n"
+        f"{knowledge_context}\n\n"
+        "上記のデータを踏まえて、具体的な数字・企業名・状況を使って回答してください。\n"
+        "一般論ではなくヒダネの実態に即した回答を心がけてください。\n"
+        "中野さんが以前の会話やクロードコードで分析した内容に言及された場合、\n"
+        "上記データに該当する情報があればそれを使って回答し、\n"
+        "ない場合は「その分析結果は私の手元にはまだ共有されていません。内容を教えていただければ対応します」と正直に答えてください。"
     )
 
     url = "https://api.anthropic.com/v1/messages"
