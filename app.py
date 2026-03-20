@@ -124,7 +124,7 @@ def api_chat_department():
     emp = get_employee(responder_name)
 
     if ANTHROPIC_API_KEY:
-        response_text = call_claude_api(message, emp, session_id, employee_name)
+        response_text = call_claude_api(message, emp, session_id, responder_name)
     else:
         response_text = generate_mock_response(message, emp)
 
