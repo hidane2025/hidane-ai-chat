@@ -1,0 +1,255 @@
+/* ヒダネ AI社員チャット - モバイルレスポンシブ */
+
+@media (max-width: 768px) {
+
+    /* ========== サイドバー ========== */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 320px;
+        z-index: 1000;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        box-shadow: none;
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .sidebar-toggle {
+        display: block;
+    }
+
+    .sidebar-toggle-mobile {
+        display: block;
+    }
+
+    /* サイドバー開閉時のオーバーレイ */
+    .sidebar-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+    }
+
+    .sidebar.open ~ .sidebar-overlay {
+        display: block;
+    }
+
+    /* ========== チャットヘッダー ========== */
+    .chat-header {
+        height: auto;
+        min-height: var(--header-height);
+        flex-wrap: wrap;
+        padding: 10px 12px;
+        gap: 8px;
+    }
+
+    .current-employee {
+        gap: 8px;
+    }
+
+    .header-avatar {
+        width: 32px;
+        height: 32px;
+    }
+
+    .header-name {
+        font-size: 14px;
+    }
+
+    .header-role {
+        font-size: 11px;
+    }
+
+    .header-actions {
+        gap: 6px;
+    }
+
+    .btn-auto {
+        padding: 5px 10px;
+        font-size: 12px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }
+
+    /* ========== メッセージ ========== */
+    .message {
+        max-width: 95%;
+    }
+
+    .msg-bubble {
+        padding: 8px 12px;
+        font-size: 14px;
+    }
+
+    .msg-avatar {
+        width: 30px;
+        height: 30px;
+    }
+
+    /* ========== PDFカード ========== */
+    .pdf-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 10px 12px;
+    }
+
+    .pdf-card-icon {
+        font-size: 24px;
+    }
+
+    .pdf-card-info {
+        width: 100%;
+    }
+
+    .pdf-card-title {
+        font-size: 13px;
+        white-space: normal;
+    }
+
+    .pdf-card-btn {
+        min-height: 44px;
+        padding: 8px 16px;
+    }
+
+    /* ========== サジェスチョンチップ ========== */
+    .suggestion-container {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 4px;
+    }
+
+    .suggestion-container::-webkit-scrollbar {
+        display: none;
+    }
+
+    .suggestion-chip {
+        white-space: nowrap;
+        flex-shrink: 0;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }
+
+    /* ========== 入力エリア ========== */
+    .input-area {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        z-index: 100;
+        padding: 8px 12px;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+    }
+
+    /* 固定入力エリア分のスペースを確保 */
+    .chat-area {
+        padding-bottom: 80px;
+    }
+
+    .input-wrapper {
+        padding: 6px 10px;
+    }
+
+    .message-input {
+        font-size: 16px; /* iOS ズーム防止 */
+        min-height: 44px;
+    }
+
+    .send-btn {
+        width: 44px;
+        height: 44px;
+        min-height: 44px;
+    }
+
+    /* ========== ウェルカム ========== */
+    .welcome-message {
+        padding: 20px 16px;
+    }
+
+    .welcome-icon {
+        font-size: 36px;
+    }
+
+    .welcome-message h2 {
+        font-size: 18px;
+    }
+
+    .welcome-message p {
+        font-size: 13px;
+    }
+
+    .quick-actions {
+        max-width: 100%;
+    }
+
+    .quick-btn {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        padding: 8px 14px;
+    }
+
+    /* ========== タッチターゲット最小サイズ ========== */
+    .channel-card {
+        min-height: 44px;
+        padding: 10px;
+    }
+
+    .sidebar-toggle,
+    .sidebar-toggle-mobile {
+        min-height: 44px;
+        min-width: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* ========== エクスポートメニュー ========== */
+    .export-dropdown {
+        right: 0;
+        min-width: 160px;
+    }
+
+    .export-dropdown button {
+        min-height: 44px;
+    }
+
+    /* ========== ルーティングプレビュー ========== */
+    .routing-preview {
+        font-size: 11px;
+    }
+
+}
+
+/* 極小画面（375px以下）用の追加調整 */
+@media (max-width: 375px) {
+    .chat-header {
+        padding: 8px 10px;
+    }
+
+    .header-name {
+        font-size: 13px;
+    }
+
+    .msg-bubble {
+        padding: 6px 10px;
+        font-size: 13px;
+    }
+
+    .pdf-card {
+        padding: 8px 10px;
+    }
+}

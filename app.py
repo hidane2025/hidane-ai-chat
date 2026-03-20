@@ -2,13 +2,12 @@
 ヒダネ AI社員チャットシステム
 - Web Chat UI: http://localhost:5555
 - LINE Bot Webhook: http://localhost:5555/line/webhook
+- 管理画面: http://localhost:5555/admin
 """
 
 import os
 import json
-import hmac
-import hashlib
-import base64
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -20,17 +19,31 @@ from employees import (
     get_departments, get_department_responder, DEPARTMENTS,
 )
 from knowledge import build_knowledge_context
+from knowledge_admin import build_custom_context
+from database import init_db, save_message, get_history, log_usage, export_conversation
+from streaming import stream_claude_response, make_sse_response
+from rate_limiter import rate_limit
+from line_handler import handle_line_webhook
+from admin_routes import admin_bp
+from system_prompt import build_system_prompt
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS: 本番ではオリジン制限
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*")
+CORS(app, origins=ALLOWED_ORIGINS.split(","))
 
 # 設定
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
-# 会話履歴（メモリ内。本番ではDBに移行）
-conversations = {}
+# DB初期化
+init_db()
+
+# 管理画面Blueprint登録
+app.register_blueprint(admin_bp)
+
 
 # ============================================================
 # Web Chat UI
@@ -42,6 +55,18 @@ def index():
     return render_template("chat.html")
 
 
+@app.route("/terms")
+def terms():
+    """利用規約"""
+    return render_template("terms.html")
+
+
+@app.route("/privacy")
+def privacy():
+    """プライバシーポリシー"""
+    return render_template("privacy.html")
+
+
 @app.route("/api/employees")
 def api_employees():
     """全AI社員リスト"""
@@ -49,26 +74,39 @@ def api_employees():
 
 
 @app.route("/api/chat", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60)
 def api_chat():
     """チャットAPI"""
-    data = request.json
+    start_time = time.time()
+    data = request.json or {}
     message = data.get("message", "")
-    target = data.get("employee")  # 指定なしなら自動ルーティング
+    target = data.get("employee")
     session_id = data.get("session_id", "default")
+    company_id = data.get("company_id", "hidane")
+
+    if not message.strip():
+        return jsonify({"error": "メッセージを入力してください"}), 400
 
     # 社員ルーティング
-    if target and target in EMPLOYEES:
-        employee_name = target
-    else:
-        employee_name = route_message(message)
-
+    employee_name = target if target and target in EMPLOYEES else route_message(message)
     emp = get_employee(employee_name)
 
-    # API呼び出し or モックレスポンス
+    # API呼び出し
     if ANTHROPIC_API_KEY:
-        response_text = call_claude_api(message, emp, session_id, employee_name)
+        # DB履歴を使用（メモリ内ではなくSQLiteから取得）
+        history = get_history(session_id, limit=10)
+        system = build_system_prompt(emp, employee_name, company_id)
+        response_text = _call_claude_api(message, history, system)
     else:
-        response_text = generate_mock_response(message, emp)
+        response_text = _generate_mock_response(message, emp)
+
+    # DB保存
+    save_message(session_id, "user", message, employee_name, emp["id"], company_id)
+    save_message(session_id, "assistant", response_text, employee_name, emp["id"], company_id)
+
+    # 利用ログ
+    elapsed_ms = int((time.time() - start_time) * 1000)
+    log_usage(session_id, "web", company_id, employee_name, len(message), len(response_text), elapsed_ms)
 
     return jsonify({
         "employee": employee_name,
@@ -81,19 +119,51 @@ def api_chat():
     })
 
 
+@app.route("/api/chat/stream", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60)
+def api_chat_stream():
+    """SSEストリーミングチャットAPI"""
+    data = request.json or {}
+    message = data.get("message", "")
+    target = data.get("employee")
+    session_id = data.get("session_id", "default")
+    company_id = data.get("company_id", "hidane")
+
+    if not message.strip():
+        return jsonify({"error": "メッセージを入力してください"}), 400
+
+    employee_name = target if target and target in EMPLOYEES else route_message(message)
+    emp = get_employee(employee_name)
+    history = get_history(session_id, limit=10)
+    system = build_system_prompt(emp, employee_name, company_id)
+
+    def on_complete(full_text):
+        """ストリーム完了時にDB保存"""
+        save_message(session_id, "user", message, employee_name, emp["id"], company_id)
+        save_message(session_id, "assistant", full_text, employee_name, emp["id"], company_id)
+
+    generator = stream_claude_response(
+        message=message,
+        employee=emp,
+        session_id=session_id,
+        employee_name=employee_name,
+        history=history,
+        system_prompt=system,
+        on_complete=on_complete,
+    )
+    return make_sse_response(generator)
+
+
 @app.route("/api/route", methods=["POST"])
 def api_route():
-    """メッセージの振り分け先を確認（送信前のプレビュー用）"""
-    data = request.json
+    """メッセージの振り分け先を確認"""
+    data = request.json or {}
     message = data.get("message", "")
     dept = data.get("department")
 
-    if dept and dept in DEPARTMENTS:
-        name = get_department_responder(dept, message)
-    else:
-        name = route_message(message)
-
+    name = get_department_responder(dept, message) if dept and dept in DEPARTMENTS else route_message(message)
     emp = get_employee(name)
+
     return jsonify({
         "employee": name,
         "employee_id": emp["id"],
@@ -109,24 +179,34 @@ def api_departments():
 
 
 @app.route("/api/chat/department", methods=["POST"])
+@rate_limit(max_requests=30, window_seconds=60)
 def api_chat_department():
     """部署グループチャットAPI"""
-    data = request.json
+    start_time = time.time()
+    data = request.json or {}
     message = data.get("message", "")
     dept_name = data.get("department", "")
     session_id = data.get("session_id", f"dept_{dept_name}")
+    company_id = data.get("company_id", "hidane")
 
     if dept_name not in DEPARTMENTS:
         return jsonify({"error": "Unknown department"}), 400
 
-    # 部署内で最適な回答者を選定
     responder_name = get_department_responder(dept_name, message)
     emp = get_employee(responder_name)
 
     if ANTHROPIC_API_KEY:
-        response_text = call_claude_api(message, emp, session_id, responder_name)
+        history = get_history(session_id, limit=10)
+        system = build_system_prompt(emp, responder_name, company_id)
+        response_text = _call_claude_api(message, history, system)
     else:
-        response_text = generate_mock_response(message, emp)
+        response_text = _generate_mock_response(message, emp)
+
+    save_message(session_id, "user", message, responder_name, emp["id"], company_id)
+    save_message(session_id, "assistant", response_text, responder_name, emp["id"], company_id)
+
+    elapsed_ms = int((time.time() - start_time) * 1000)
+    log_usage(session_id, "web", company_id, responder_name, len(message), len(response_text), elapsed_ms)
 
     return jsonify({
         "employee": responder_name,
@@ -142,10 +222,30 @@ def api_chat_department():
 
 @app.route("/api/history/<channel_id>")
 def api_history(channel_id):
-    """チャネル別の会話履歴を取得"""
-    history = conversations.get(channel_id, [])
+    """チャネル別の会話履歴を取得（DBから）"""
+    history = get_history(channel_id, limit=50)
     return jsonify(history)
 
+
+@app.route("/api/export/<session_id>")
+def api_export(session_id):
+    """会話エクスポート"""
+    fmt = request.args.get("format", "json")
+    if fmt not in ("json", "csv", "txt"):
+        return jsonify({"error": "format must be json, csv, or txt"}), 400
+
+    content = export_conversation(session_id, fmt)
+    content_type = {
+        "json": "application/json",
+        "csv": "text/csv",
+        "txt": "text/plain",
+    }[fmt]
+    return content, 200, {"Content-Type": f"{content_type}; charset=utf-8"}
+
+
+# ============================================================
+# ファイル配信
+# ============================================================
 
 @app.route("/static/avatars/<path:filename>")
 def serve_avatar(filename):
@@ -155,9 +255,8 @@ def serve_avatar(filename):
 
 @app.route("/api/files/<path:filename>")
 def serve_file(filename):
-    """PDF等ファイル配信（AI社員がチャットで送付する資料用）"""
+    """PDF等ファイル配信"""
     import re
-    # セキュリティ: ファイル名バリデーション（パストラバーサル防止）
     if ".." in filename or "/" in filename or not re.match(r'^[\w\-. ]+\.pdf$', filename, re.UNICODE):
         return jsonify({"error": "Invalid filename"}), 400
 
@@ -176,13 +275,27 @@ def list_files():
     if not file_dir.exists():
         return jsonify([])
 
-    files = []
-    for f in sorted(file_dir.glob("*.pdf")):
-        files.append({
-            "filename": f.name,
-            "size_kb": round(f.stat().st_size / 1024, 1),
-        })
-    return jsonify(files)
+    return jsonify([
+        {"filename": f.name, "size_kb": round(f.stat().st_size / 1024, 1)}
+        for f in sorted(file_dir.glob("*.pdf"))
+    ])
+
+
+@app.route("/api/upload", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
+def api_upload():
+    """ファイルアップロード（ユーザー→AI社員）"""
+    from file_handler import validate_file, save_upload
+    if "file" not in request.files:
+        return jsonify({"error": "ファイルが見つかりません"}), 400
+
+    file = request.files["file"]
+    is_valid, error = validate_file(file)
+    if not is_valid:
+        return jsonify({"error": error}), 400
+
+    result = save_upload(file)
+    return jsonify(result)
 
 
 # ============================================================
@@ -192,231 +305,19 @@ def list_files():
 @app.route("/line/webhook", methods=["POST"])
 def line_webhook():
     """LINE Bot Webhook受信"""
-    body = request.get_data(as_text=True)
-
-    # 署名検証
-    if LINE_CHANNEL_SECRET:
-        signature = request.headers.get("X-Line-Signature", "")
-        if not verify_line_signature(body, signature):
-            return "Invalid signature", 403
-
-    try:
-        events = json.loads(body).get("events", [])
-    except json.JSONDecodeError:
-        return "Bad request", 400
-
-    for event in events:
-        if event.get("type") == "message" and event["message"].get("type") == "text":
-            handle_line_message(event)
-
-    return "OK", 200
-
-
-def verify_line_signature(body: str, signature: str) -> bool:
-    """LINE署名検証"""
-    gen_signature = hmac.new(
-        LINE_CHANNEL_SECRET.encode("utf-8"),
-        body.encode("utf-8"),
-        hashlib.sha256,
-    ).digest()
-    return hmac.compare_digest(signature, base64.b64encode(gen_signature).decode())
-
-
-def handle_line_message(event: dict):
-    """LINEメッセージ処理"""
-    reply_token = event.get("replyToken", "")
-    user_id = event["source"].get("userId", "unknown")
-    text = event["message"]["text"]
-
-    # 社員ルーティング
-    employee_name = route_message(text)
-    emp = get_employee(employee_name)
-
-    # レスポンス生成
-    if ANTHROPIC_API_KEY:
-        response_text = call_claude_api(text, emp, f"line_{user_id}", employee_name)
-    else:
-        response_text = generate_mock_response(text, emp)
-
-    # 名前バナー付きレスポンス
-    banner = f"━━━━━━━━━━━━━━━\n💬 {emp['full_name']}（{emp['role']}）\n━━━━━━━━━━━━━━━"
-
-    # PDF添付を検出してLINE用メッセージを構築
-    pdf_attachments = _extract_pdf_tags(response_text)
-    clean_text = _strip_pdf_tags(response_text)
-    full_response = f"{banner}\n\n{clean_text}"
-
-    # LINE返信（テキスト + PDF Flex Messageがあれば追加）
-    messages = [{"type": "text", "text": full_response[:5000]}]
-    base_url = os.environ.get("RENDER_EXTERNAL_URL", "https://hidane-ai-chat.onrender.com")
-    for pdf in pdf_attachments[:2]:  # LINE は1リプライ最大5メッセージ、PDFは最大2つまで
-        messages.append(_build_pdf_flex(pdf["filename"], pdf["title"], base_url))
-
-    reply_to_line_multi(reply_token, messages)
-
-
-def _extract_pdf_tags(text: str) -> list:
-    """テキストから [PDF:filename:title] タグを抽出"""
-    import re
-    return [
-        {"filename": m.group(1), "title": m.group(2)}
-        for m in re.finditer(r'\[PDF:([^\]:]+\.pdf):([^\]]+)\]', text)
-    ]
-
-
-def _strip_pdf_tags(text: str) -> str:
-    """テキストから [PDF:...] タグを除去して整形"""
-    import re
-    cleaned = re.sub(r'\[PDF:[^\]:]+\.pdf:[^\]]+\]', '', text)
-    # 連続空行を1つに
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
-    return cleaned.strip()
-
-
-def _build_pdf_flex(filename: str, title: str, base_url: str) -> dict:
-    """LINE Flex MessageでPDFカードを構築"""
-    pdf_url = f"{base_url}/api/files/{filename}"
-    return {
-        "type": "flex",
-        "altText": f"📄 {title}",
-        "contents": {
-            "type": "bubble",
-            "size": "kilo",
-            "body": {
-                "type": "box",
-                "layout": "horizontal",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": "📄",
-                        "size": "xxl",
-                        "flex": 0,
-                        "gravity": "center",
-                    },
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "contents": [
-                            {
-                                "type": "text",
-                                "text": title,
-                                "weight": "bold",
-                                "size": "sm",
-                                "wrap": True,
-                            },
-                            {
-                                "type": "text",
-                                "text": filename,
-                                "size": "xxs",
-                                "color": "#888888",
-                            },
-                        ],
-                        "flex": 1,
-                        "margin": "md",
-                    },
-                ],
-                "paddingAll": "lg",
-            },
-            "footer": {
-                "type": "box",
-                "layout": "horizontal",
-                "contents": [
-                    {
-                        "type": "button",
-                        "action": {
-                            "type": "uri",
-                            "label": "PDFを開く",
-                            "uri": pdf_url,
-                        },
-                        "style": "primary",
-                        "height": "sm",
-                        "color": "#6C5CE7",
-                    },
-                ],
-                "paddingAll": "md",
-            },
-        },
-    }
-
-
-def reply_to_line(reply_token: str, text: str):
-    """LINEにテキストメッセージ返信"""
-    reply_to_line_multi(reply_token, [{"type": "text", "text": text[:5000]}])
-
-
-def reply_to_line_multi(reply_token: str, messages: list):
-    """LINEに複数メッセージ返信"""
-    import urllib.request
-
-    url = "https://api.line.me/v2/bot/message/reply"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
-    }
-    data = json.dumps({
-        "replyToken": reply_token,
-        "messages": messages[:5],  # LINE上限5メッセージ
-    }).encode("utf-8")
-
-    req = urllib.request.Request(url, data=data, headers=headers)
-    try:
-        urllib.request.urlopen(req)
-    except Exception as e:
-        print(f"LINE reply error: {e}")
+    return handle_line_webhook(request)
 
 
 # ============================================================
-# Claude API 呼び出し
+# Claude API 呼び出し（内部関数）
 # ============================================================
 
-def call_claude_api(message: str, employee: dict, session_id: str, employee_name: str = "") -> str:
+def _call_claude_api(message: str, history: list, system: str) -> str:
     """Claude APIを使ってAI社員として応答"""
     import urllib.request
 
-    # 会話履歴取得
-    if session_id not in conversations:
-        conversations[session_id] = []
-
-    history = conversations[session_id][-10:]  # 直近10往復
-
-    messages = []
-    for h in history:
-        messages.append({"role": h["role"], "content": h["content"]})
+    messages = [{"role": h["role"], "content": h["content"]} for h in history]
     messages.append({"role": "user", "content": message})
-
-    # AI社員一覧（他社員への言及用）
-    employee_list = "、".join(
-        f"{v['full_name']}（{v['role']}）"
-        for v in EMPLOYEES.values()
-    )
-
-    # 社員別の事業知識を注入（employee_nameが渡されない場合はfull_nameから抽出）
-    name_key = employee_name or employee.get("full_name", "").split()[-1]
-    knowledge_context = build_knowledge_context(name_key)
-
-    system = (
-        f"{employee['system_prompt']}\n\n"
-        "【重要：あなたの立場】\n"
-        "あなたは株式会社ヒダネの社内チャットシステム上で動作するAI社員です。\n"
-        "話し相手は社長の中野祐揮（なかの・ゆうき）さんです。「中野さん」と呼んでください。\n"
-        "あなたへのメッセージは業務指示・質問・雑談・フィードバックなど様々です。\n"
-        "メッセージの内容をよく読み、的確に応答してください。\n"
-        "知らないことは「確認します」と答え、存在しない人名や情報を捏造しないでください。\n\n"
-        "【AI社員チーム】\n"
-        f"{employee_list}\n"
-        "※全員AI社員です。呼ぶときは下の名前（ソウ、リサ、ルナ等）で呼んでください。\n\n"
-        "【トーンルール】\n"
-        "誠実・信用重視。煽らない。「ぜひ」「お得」「今だけ」「特別」「革命的」「最強」は使わない。\n"
-        "数字は根拠を明記。推測値は「（推定）」を付ける。\n"
-        "助成金の記載は「活用の可能性」「条件を満たせば申請可能」。\n\n"
-        "【あなたが把握している事業データ（リアルタイム）】\n"
-        f"{knowledge_context}\n\n"
-        "上記のデータを踏まえて、具体的な数字・企業名・状況を使って回答してください。\n"
-        "一般論ではなくヒダネの実態に即した回答を心がけてください。\n"
-        "中野さんが以前の会話やクロードコードで分析した内容に言及された場合、\n"
-        "上記データに該当する情報があればそれを使って回答し、\n"
-        "ない場合は「その分析結果は私の手元にはまだ共有されていません。内容を教えていただければ対応します」と正直に答えてください。"
-    )
 
     url = "https://api.anthropic.com/v1/messages"
     headers = {
@@ -435,66 +336,20 @@ def call_claude_api(message: str, employee: dict, session_id: str, employee_name
     try:
         with urllib.request.urlopen(req) as res:
             result = json.loads(res.read().decode())
-            response_text = result["content"][0]["text"]
-
-            # 履歴保存
-            conversations[session_id].append({"role": "user", "content": message})
-            conversations[session_id].append({"role": "assistant", "content": response_text})
-
-            # 最大50往復で切り捨て
-            if len(conversations[session_id]) > 100:
-                conversations[session_id] = conversations[session_id][-100:]
-
-            return response_text
+            return result["content"][0]["text"]
     except Exception as e:
         return f"申し訳ございません、接続エラーが発生しました: {str(e)}"
 
 
-# ============================================================
-# モックレスポンス（API未設定時）
-# ============================================================
-
-def generate_mock_response(message: str, employee: dict) -> str:
+def _generate_mock_response(message: str, employee: dict) -> str:
     """APIキー未設定時のデモレスポンス"""
     name = employee["full_name"].split()[-1]
-    role = employee["role"]
-
-    responses = {
-        "ソウ": (
-            f"お疲れ様です。{name}です。\n\n"
-            f"「{message[:30]}」について確認しました。\n\n"
-            "こちらは現在デモモードで動作しています。\n"
-            "本番稼働にはANTHROPIC_API_KEYの設定が必要です。\n\n"
-            "設定方法:\n"
-            "export ANTHROPIC_API_KEY=sk-ant-xxxxx\n\n"
-            "設定後、AI社員が実際にClaude APIを使って応答します。"
-        ),
-        "リサ": (
-            f"中野さん！リサです！\n\n"
-            f"「{message[:30]}」の件、了解しました！\n"
-            "リサーチデータ集めて、提案書にまとめちゃいますね！\n\n"
-            "※デモモードで動作中です。ANTHROPIC_API_KEY設定で本番稼働します。"
-        ),
-        "ルナ": (
-            f"中野さん！ルナです！\n\n"
-            f"「{message[:30]}」ですね！\n"
-            "これ、バズりそうなネタですね！台本書いちゃいますよ！\n\n"
-            "※デモモードで動作中です。ANTHROPIC_API_KEY設定で本番稼働します。"
-        ),
-        "マコト": (
-            f"マコトっす！\n\n"
-            f"「{message[:30]}」の件、了解っす！\n"
-            "DMリストと送信テンプレ、すぐ用意しますよ！\n\n"
-            "※デモモードで動作中です。ANTHROPIC_API_KEY設定で本番稼働します。"
-        ),
+    defaults = {
+        "ソウ": f"お疲れ様です。{name}です。\n\n「{message[:30]}」について確認しました。\n\nデモモードで動作中です。",
+        "リサ": f"中野さん！リサです！\n\n「{message[:30]}」の件、了解しました！\n\nデモモードで動作中です。",
+        "ルナ": f"中野さん！ルナです！\n\n「{message[:30]}」ですね！\n\nデモモードで動作中です。",
     }
-
-    return responses.get(name, (
-        f"{employee['greeting']}\n\n"
-        f"「{message[:30]}」について承りました。\n"
-        f"{role}として対応いたします。\n\n"
-        "※デモモードで動作中です。ANTHROPIC_API_KEY設定で本番稼働します。"
-    ))
+    return defaults.get(name, f"{employee['greeting']}\n\n「{message[:30]}」について承りました。\n\nデモモードで動作中です。")
 
 
 # ============================================================
@@ -505,14 +360,15 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5555))
     print(f"""
 ╔══════════════════════════════════════════════════╗
-║     🔥 ヒダネ AI社員チャットシステム 起動        ║
+║     🔥 ヒダネ AI社員チャットシステム v2.0       ║
 ╠══════════════════════════════════════════════════╣
 ║                                                  ║
-║  Web Chat UI:  http://localhost:{port}             ║
-║  LINE Webhook: http://localhost:{port}/line/webhook ║
+║  Web Chat:  http://localhost:{port}               ║
+║  管理画面:  http://localhost:{port}/admin           ║
+║  LINE Bot:  http://localhost:{port}/line/webhook   ║
 ║                                                  ║
 ║  API Key: {"✅ 設定済み" if ANTHROPIC_API_KEY else "❌ 未設定（デモモード）"}              ║
-║  LINE:    {"✅ 設定済み" if LINE_CHANNEL_SECRET else "❌ 未設定"}              ║
+║  DB:      SQLite (data/chat.db)                  ║
 ║                                                  ║
 ╚══════════════════════════════════════════════════╝
 """)

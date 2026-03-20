@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ヒダネ AI - 管理画面</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f0f14;
+            color: #e8e8f0;
+            line-height: 1.6;
+        }
+        .header {
+            background: #1a1a24;
+            border-bottom: 1px solid #2d2d42;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 { font-size: 20px; color: #6C5CE7; }
+        .header a { color: #9898b0; text-decoration: none; font-size: 14px; }
+        .header a:hover { color: #6C5CE7; }
+        .container { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid #2d2d42;
+        }
+        .tab {
+            padding: 12px 20px;
+            cursor: pointer;
+            color: #9898b0;
+            border-bottom: 2px solid transparent;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: #e8e8f0; }
+        .tab.active { color: #6C5CE7; border-bottom-color: #6C5CE7; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+        .card {
+            background: #1a1a24;
+            border: 1px solid #2d2d42;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .card h3 { font-size: 16px; margin-bottom: 12px; color: #a29bfe; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: #9898b0;
+            margin-bottom: 6px;
+        }
+        input[type="text"], input[type="email"], input[type="password"], textarea, select {
+            width: 100%;
+            padding: 10px 14px;
+            background: #252535;
+            border: 1px solid #2d2d42;
+            border-radius: 8px;
+            color: #e8e8f0;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus, textarea:focus, select:focus { border-color: #6C5CE7; }
+        textarea { resize: vertical; min-height: 80px; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #6C5CE7; color: #fff; }
+        .btn-primary:hover { background: #a29bfe; }
+        .btn-danger { background: #e17055; color: #fff; }
+        .btn-danger:hover { background: #fab1a0; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .item-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: #252535;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .item-content { flex: 1; }
+        .item-title { font-weight: 600; font-size: 14px; }
+        .item-detail { font-size: 12px; color: #9898b0; margin-top: 4px; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #1a1a24;
+            border: 1px solid #2d2d42;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .stat-value { font-size: 32px; font-weight: 700; color: #6C5CE7; }
+        .stat-label { font-size: 13px; color: #9898b0; margin-top: 4px; }
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #00b894;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+        }
+        .toast.show { opacity: 1; }
+        .file-list { max-height: 400px; overflow-y: auto; }
+        .empty { text-align: center; color: #686880; padding: 40px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔥 ヒダネ AI 管理画面</h1>
+        <div>
+            <a href="/">← チャットに戻る</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="tabs">
+            <div class="tab active" data-panel="knowledge">ナレッジベース</div>
+            <div class="tab" data-panel="faq">FAQ管理</div>
+            <div class="tab" data-panel="files">ファイル管理</div>
+            <div class="tab" data-panel="stats">利用統計</div>
+            <div class="tab" data-panel="employees">社員設定</div>
+        </div>
+
+        <!-- ナレッジベース -->
+        <div class="panel active" id="panel-knowledge">
+            <div class="card">
+                <h3>会社情報を追加</h3>
+                <div class="form-group">
+                    <label>タイトル</label>
+                    <input type="text" id="infoTitle" placeholder="例：営業実績 2026年3月">
+                </div>
+                <div class="form-group">
+                    <label>内容</label>
+                    <textarea id="infoContent" placeholder="AI社員全員が参照できる情報を入力..."></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="addInfo()">追加</button>
+            </div>
+            <div class="card">
+                <h3>登録済み情報</h3>
+                <div id="infoList" class="file-list">
+                    <div class="empty">読み込み中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FAQ管理 -->
+        <div class="panel" id="panel-faq">
+            <div class="card">
+                <h3>FAQを追加</h3>
+                <div class="form-group">
+                    <label>質問</label>
+                    <input type="text" id="faqQuestion" placeholder="例：研修の費用はいくらですか？">
+                </div>
+                <div class="form-group">
+                    <label>回答</label>
+                    <textarea id="faqAnswer" placeholder="AI社員がこの回答を参考にします..."></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="addFaq()">追加</button>
+            </div>
+            <div class="card">
+                <h3>登録済みFAQ</h3>
+                <div id="faqList" class="file-list">
+                    <div class="empty">読み込み中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ファイル管理 -->
+        <div class="panel" id="panel-files">
+            <div class="card">
+                <h3>PDFアップロード（AI社員が送信可能に）</h3>
+                <div class="form-group">
+                    <input type="file" id="fileUpload" accept=".pdf" style="color:#9898b0">
+                </div>
+                <button class="btn btn-primary" onclick="uploadFile()">アップロード</button>
+            </div>
+            <div class="card">
+                <h3>送信可能ファイル一覧</h3>
+                <div id="fileList" class="file-list">
+                    <div class="empty">読み込み中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 利用統計 -->
+        <div class="panel" id="panel-stats">
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-value" id="statTotal">-</div>
+                    <div class="stat-label">総メッセージ数（7日間）</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statAvgTime">-</div>
+                    <div class="stat-label">平均応答時間</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statTopEmployee">-</div>
+                    <div class="stat-label">最多対応社員</div>
+                </div>
+            </div>
+            <div class="card">
+                <h3>社員別メッセージ数</h3>
+                <div id="employeeStats">
+                    <div class="empty">統計データ準備中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 社員設定 -->
+        <div class="panel" id="panel-employees">
+            <div class="card">
+                <h3>社員別追加指示</h3>
+                <p style="font-size:13px;color:#9898b0;margin-bottom:16px">
+                    各AI社員に個別の追加指示を設定できます。ナレッジの補足や対応方針の調整に。
+                </p>
+                <div class="form-group">
+                    <label>対象社員</label>
+                    <select id="empSelect">
+                        <option value="ソウ">ソウ（AI部 部長）</option>
+                        <option value="リサ">リサ（営業リサーチ）</option>
+                        <option value="ユイ">ユイ（助成金事務）</option>
+                        <option value="ミオ">ミオ（クリエイティブ）</option>
+                        <option value="ナツキ">ナツキ（研修設計）</option>
+                        <option value="カナタ">カナタ（助成金戦略）</option>
+                        <option value="ルナ">ルナ（SNS）</option>
+                        <option value="レン">レン（営業推進）</option>
+                        <option value="ヒカリ">ヒカリ（Webマーケ）</option>
+                        <option value="アキ">アキ（経理）</option>
+                        <option value="マコト">マコト（DM営業）</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>追加指示</label>
+                    <textarea id="empNote" placeholder="例：最近の案件では〇〇を重点的に提案してください..."></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="setEmpNote()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+    // タブ切り替え
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+        });
+    });
+
+    function toast(msg) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    async function api(url, method = 'GET', body = null) {
+        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        if (body) opts.body = JSON.stringify(body);
+        const res = await fetch(url, opts);
+        return res.json();
+    }
+
+    // ナレッジ管理
+    async function loadInfo() {
+        const data = await api('/admin/api/knowledge');
+        const list = document.getElementById('infoList');
+        const items = data.company_info || [];
+        if (!items.length) { list.innerHTML = '<div class="empty">登録なし</div>'; return; }
+        list.innerHTML = items.map(i => `
+            <div class="item-row">
+                <div class="item-content">
+                    <div class="item-title">${esc(i.title)}</div>
+                    <div class="item-detail">${esc(i.content).substring(0, 100)}</div>
+                </div>
+                <button class="btn btn-danger btn-sm" onclick="removeInfo('${i.id}')">削除</button>
+            </div>
+        `).join('');
+    }
+
+    async function addInfo() {
+        const title = document.getElementById('infoTitle').value.trim();
+        const content = document.getElementById('infoContent').value.trim();
+        if (!title || !content) { toast('タイトルと内容を入力してください'); return; }
+        await api('/admin/api/knowledge/info', 'POST', { title, content });
+        document.getElementById('infoTitle').value = '';
+        document.getElementById('infoContent').value = '';
+        toast('追加しました');
+        loadInfo();
+    }
+
+    async function removeInfo(id) {
+        await api('/admin/api/knowledge/info/' + id, 'DELETE');
+        toast('削除しました');
+        loadInfo();
+    }
+
+    // FAQ管理
+    async function loadFaq() {
+        const data = await api('/admin/api/knowledge');
+        const list = document.getElementById('faqList');
+        const items = data.faq || [];
+        if (!items.length) { list.innerHTML = '<div class="empty">登録なし</div>'; return; }
+        list.innerHTML = items.map(f => `
+            <div class="item-row">
+                <div class="item-content">
+                    <div class="item-title">Q: ${esc(f.question)}</div>
+                    <div class="item-detail">A: ${esc(f.answer).substring(0, 100)}</div>
+                </div>
+                <button class="btn btn-danger btn-sm" onclick="removeFaq('${f.id}')">削除</button>
+            </div>
+        `).join('');
+    }
+
+    async function addFaq() {
+        const q = document.getElementById('faqQuestion').value.trim();
+        const a = document.getElementById('faqAnswer').value.trim();
+        if (!q || !a) { toast('質問と回答を入力してください'); return; }
+        await api('/admin/api/knowledge/faq', 'POST', { question: q, answer: a });
+        document.getElementById('faqQuestion').value = '';
+        document.getElementById('faqAnswer').value = '';
+        toast('追加しました');
+        loadFaq();
+    }
+
+    async function removeFaq(id) {
+        await api('/admin/api/knowledge/faq/' + id, 'DELETE');
+        toast('削除しました');
+        loadFaq();
+    }
+
+    // ファイル管理
+    async function loadFiles() {
+        const files = await api('/api/files');
+        const list = document.getElementById('fileList');
+        if (!files.length) { list.innerHTML = '<div class="empty">ファイルなし</div>'; return; }
+        list.innerHTML = files.map(f => `
+            <div class="item-row">
+                <div class="item-content">
+                    <div class="item-title">📄 ${esc(f.filename)}</div>
+                    <div class="item-detail">${f.size_kb} KB</div>
+                </div>
+                <a href="/api/files/${encodeURIComponent(f.filename)}" target="_blank"
+                   class="btn btn-primary btn-sm" style="text-decoration:none">開く</a>
+            </div>
+        `).join('');
+    }
+
+    async function uploadFile() {
+        const input = document.getElementById('fileUpload');
+        if (!input.files.length) { toast('ファイルを選択してください'); return; }
+        const form = new FormData();
+        form.append('file', input.files[0]);
+        const res = await fetch('/admin/api/upload', { method: 'POST', body: form });
+        const data = await res.json();
+        if (data.error) { toast('エラー: ' + data.error); return; }
+        input.value = '';
+        toast('アップロードしました');
+        loadFiles();
+    }
+
+    // 利用統計
+    async function loadStats() {
+        try {
+            const data = await api('/admin/api/stats');
+            document.getElementById('statTotal').textContent = data.total_messages || 0;
+            const avgMs = data.avg_response_time_ms || 0;
+            document.getElementById('statAvgTime').textContent = avgMs > 0 ? (avgMs / 1000).toFixed(1) + '秒' : '-';
+            const byEmp = data.by_employee || {};
+            const topEmp = Object.entries(byEmp).sort((a,b) => b[1] - a[1]);
+            document.getElementById('statTopEmployee').textContent = topEmp.length ? topEmp[0][0] : '-';
+            const statsDiv = document.getElementById('employeeStats');
+            if (!topEmp.length) { statsDiv.innerHTML = '<div class="empty">データなし</div>'; return; }
+            statsDiv.innerHTML = topEmp.map(([name, count]) => `
+                <div class="item-row">
+                    <div class="item-title">${esc(name)}</div>
+                    <div style="color:#6C5CE7;font-weight:700">${count}件</div>
+                </div>
+            `).join('');
+        } catch(e) {
+            document.getElementById('employeeStats').innerHTML = '<div class="empty">統計機能準備中</div>';
+        }
+    }
+
+    // 社員別ノート
+    async function setEmpNote() {
+        const name = document.getElementById('empSelect').value;
+        const note = document.getElementById('empNote').value.trim();
+        await api('/admin/api/knowledge/employee-note', 'POST', { employee: name, note });
+        toast(name + 'の追加指示を保存しました');
+    }
+
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s || '';
+        return d.innerHTML;
+    }
+
+    // 初期読み込み
+    loadInfo();
+    loadFaq();
+    loadFiles();
+    loadStats();
+    </script>
+</body>
+</html>
