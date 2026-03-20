@@ -153,6 +153,38 @@ def serve_avatar(filename):
     return send_from_directory("static/avatars", filename)
 
 
+@app.route("/api/files/<path:filename>")
+def serve_file(filename):
+    """PDF等ファイル配信（AI社員がチャットで送付する資料用）"""
+    import re
+    # セキュリティ: ファイル名バリデーション（パストラバーサル防止）
+    if ".." in filename or "/" in filename or not re.match(r'^[\w\-. ]+\.pdf$', filename, re.UNICODE):
+        return jsonify({"error": "Invalid filename"}), 400
+
+    file_dir = Path(__file__).parent / "static" / "files"
+    file_path = file_dir / filename
+    if not file_path.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    return send_from_directory(str(file_dir), filename, as_attachment=False)
+
+
+@app.route("/api/files")
+def list_files():
+    """利用可能なファイル一覧"""
+    file_dir = Path(__file__).parent / "static" / "files"
+    if not file_dir.exists():
+        return jsonify([])
+
+    files = []
+    for f in sorted(file_dir.glob("*.pdf")):
+        files.append({
+            "filename": f.name,
+            "size_kb": round(f.stat().st_size / 1024, 1),
+        })
+    return jsonify(files)
+
+
 # ============================================================
 # LINE Bot Webhook
 # ============================================================
@@ -208,14 +240,112 @@ def handle_line_message(event: dict):
 
     # 名前バナー付きレスポンス
     banner = f"━━━━━━━━━━━━━━━\n💬 {emp['full_name']}（{emp['role']}）\n━━━━━━━━━━━━━━━"
-    full_response = f"{banner}\n\n{response_text}"
 
-    # LINE返信
-    reply_to_line(reply_token, full_response)
+    # PDF添付を検出してLINE用メッセージを構築
+    pdf_attachments = _extract_pdf_tags(response_text)
+    clean_text = _strip_pdf_tags(response_text)
+    full_response = f"{banner}\n\n{clean_text}"
+
+    # LINE返信（テキスト + PDF Flex Messageがあれば追加）
+    messages = [{"type": "text", "text": full_response[:5000]}]
+    base_url = os.environ.get("RENDER_EXTERNAL_URL", "https://hidane-ai-chat.onrender.com")
+    for pdf in pdf_attachments[:2]:  # LINE は1リプライ最大5メッセージ、PDFは最大2つまで
+        messages.append(_build_pdf_flex(pdf["filename"], pdf["title"], base_url))
+
+    reply_to_line_multi(reply_token, messages)
+
+
+def _extract_pdf_tags(text: str) -> list:
+    """テキストから [PDF:filename:title] タグを抽出"""
+    import re
+    return [
+        {"filename": m.group(1), "title": m.group(2)}
+        for m in re.finditer(r'\[PDF:([^\]:]+\.pdf):([^\]]+)\]', text)
+    ]
+
+
+def _strip_pdf_tags(text: str) -> str:
+    """テキストから [PDF:...] タグを除去して整形"""
+    import re
+    cleaned = re.sub(r'\[PDF:[^\]:]+\.pdf:[^\]]+\]', '', text)
+    # 連続空行を1つに
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
+
+
+def _build_pdf_flex(filename: str, title: str, base_url: str) -> dict:
+    """LINE Flex MessageでPDFカードを構築"""
+    pdf_url = f"{base_url}/api/files/{filename}"
+    return {
+        "type": "flex",
+        "altText": f"📄 {title}",
+        "contents": {
+            "type": "bubble",
+            "size": "kilo",
+            "body": {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "📄",
+                        "size": "xxl",
+                        "flex": 0,
+                        "gravity": "center",
+                    },
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": title,
+                                "weight": "bold",
+                                "size": "sm",
+                                "wrap": True,
+                            },
+                            {
+                                "type": "text",
+                                "text": filename,
+                                "size": "xxs",
+                                "color": "#888888",
+                            },
+                        ],
+                        "flex": 1,
+                        "margin": "md",
+                    },
+                ],
+                "paddingAll": "lg",
+            },
+            "footer": {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                    {
+                        "type": "button",
+                        "action": {
+                            "type": "uri",
+                            "label": "PDFを開く",
+                            "uri": pdf_url,
+                        },
+                        "style": "primary",
+                        "height": "sm",
+                        "color": "#6C5CE7",
+                    },
+                ],
+                "paddingAll": "md",
+            },
+        },
+    }
 
 
 def reply_to_line(reply_token: str, text: str):
-    """LINEにメッセージ返信"""
+    """LINEにテキストメッセージ返信"""
+    reply_to_line_multi(reply_token, [{"type": "text", "text": text[:5000]}])
+
+
+def reply_to_line_multi(reply_token: str, messages: list):
+    """LINEに複数メッセージ返信"""
     import urllib.request
 
     url = "https://api.line.me/v2/bot/message/reply"
@@ -225,7 +355,7 @@ def reply_to_line(reply_token: str, text: str):
     }
     data = json.dumps({
         "replyToken": reply_token,
-        "messages": [{"type": "text", "text": text[:5000]}],
+        "messages": messages[:5],  # LINE上限5メッセージ
     }).encode("utf-8")
 
     req = urllib.request.Request(url, data=data, headers=headers)

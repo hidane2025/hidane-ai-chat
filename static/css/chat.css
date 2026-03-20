@@ -511,3 +511,76 @@ body {
     0%, 100% { background: transparent; }
     50% { background: var(--accent); }
 }
+
+/* ========== PDF カード ========== */
+.pdf-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    margin: 8px 0;
+    transition: border-color 0.2s;
+}
+
+.pdf-card:hover {
+    border-color: var(--accent);
+}
+
+.pdf-card-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+}
+
+.pdf-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.pdf-card-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pdf-card-filename {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.pdf-card-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    color: #fff;
+    background: var(--accent);
+    transition: background 0.2s, transform 0.1s;
+    flex-shrink: 0;
+}
+
+.pdf-card-btn:hover {
+    background: var(--accent-light);
+    transform: translateY(-1px);
+}
+
+.pdf-card-btn.pdf-dl {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    padding: 6px 10px;
+}
+
+.pdf-card-btn.pdf-dl:hover {
+    background: var(--accent);
+    color: #fff;
+}

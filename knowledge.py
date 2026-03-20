@@ -201,10 +201,14 @@ def build_knowledge_context(employee_name: str) -> str:
     # CONTEXT.mdから動的に商談先一覧を取得
     clients_info = _get_clients_summary()
 
+    # 送信可能なPDFファイル一覧
+    files_info = _get_available_files()
+
     parts = [
         COMPANY_CORE,
         specific,
         clients_info,
+        files_info,
     ]
     return "\n\n".join(p for p in parts if p)
 
@@ -225,3 +229,27 @@ def _get_clients_summary() -> str:
         return ""
 
     return "【商談先フォルダ一覧】\n" + "\n".join(companies)
+
+
+def _get_available_files() -> str:
+    """送信可能なPDFファイル一覧を取得"""
+    files_dir = Path(__file__).parent / "static" / "files"
+    if not files_dir.exists():
+        return ""
+
+    pdfs = sorted(files_dir.glob("*.pdf"))
+    if not pdfs:
+        return ""
+
+    lines = []
+    for f in pdfs:
+        size_kb = round(f.stat().st_size / 1024, 1)
+        lines.append(f"- {f.name}（{size_kb}KB）")
+
+    return (
+        "【送信可能なPDF資料】\n"
+        "以下のPDFを中野さんに送信できます。送る場合は回答の中に\n"
+        "[PDF:ファイル名.pdf:表示タイトル] の形式で記述してください。\n"
+        "例: [PDF:提案書_サンプル.pdf:ご提案書]\n\n"
+        + "\n".join(lines)
+    )

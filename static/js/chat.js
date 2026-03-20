@@ -382,7 +382,7 @@ function appendMessageDom(type, text, data) {
                     <span class="msg-time">${time}</span>
                 </div>
                 <div class="msg-bubble" style="border-left-color:${data.employee_color}">
-                    ${escapeHtml(text)}
+                    ${renderMessageContent(text)}
                 </div>
             </div>
         `;
@@ -527,6 +527,28 @@ function escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
+}
+
+function renderMessageContent(text) {
+    // まずHTMLエスケープ
+    let html = escapeHtml(text);
+    // [PDF:filename.pdf:表示名] をPDFカードに変換
+    html = html.replace(
+        /\[PDF:([^\]:]+\.pdf):([^\]]+)\]/g,
+        (_, filename, title) => {
+            const url = `/api/files/${encodeURIComponent(filename)}`;
+            return `<div class="pdf-card">
+                <div class="pdf-card-icon">📄</div>
+                <div class="pdf-card-info">
+                    <div class="pdf-card-title">${escapeHtml(title)}</div>
+                    <div class="pdf-card-filename">${escapeHtml(filename)}</div>
+                </div>
+                <a href="${url}" target="_blank" class="pdf-card-btn" title="PDFを開く">開く</a>
+                <a href="${url}" download class="pdf-card-btn pdf-dl" title="ダウンロード">⬇</a>
+            </div>`;
+        }
+    );
+    return html;
 }
 
 // ========== Start ==========
