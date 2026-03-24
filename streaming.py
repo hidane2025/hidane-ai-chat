@@ -77,7 +77,6 @@ def stream_claude_response(
                 "max_tokens": MAX_TOKENS,
                 "system": system_prompt,
                 "messages": messages,
-                "stream": True,
             }
             if tools:
                 api_kwargs["tools"] = tools
@@ -175,7 +174,9 @@ def stream_claude_response(
             yield _sse_event({"type": "pdf", "filename": pdf["filename"], "title": pdf["title"]})
 
     except Exception as exc:
-        yield _sse_event({"type": "error", "message": str(exc)})
+        import traceback
+        traceback.print_exc()
+        yield _sse_event({"type": "error", "message": f"ストリーミングエラー: {str(exc)}"})
 
 
 def make_sse_response(generator: Generator[str, None, None]) -> Response:
