@@ -50,7 +50,9 @@ ROOT_FOLDER_ID = os.environ.get(
     "1ldU_588zYPJVybNjiy2D6GvBXu88qk7d",
 )
 
-# サービスアカウント認証情報（環境変数からJSON文字列として取得）
+# サービスアカウント認証情報
+# 優先順位: 1. Secret File  2. 環境変数JSON文字列
+_SECRET_FILE_PATH = "/etc/secrets/google_service_account.json"
 _SERVICE_ACCOUNT_KEY = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY", "")
 
 # キャッシュ: Drive API サービスインスタンス
@@ -70,16 +72,22 @@ def _get_drive_service():
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
 
-        # 環境変数経由でJSONを読む場合、\nが\\nにエスケープされることがある
-        raw_key = _SERVICE_ACCOUNT_KEY
-        key_data = json.loads(raw_key)
-        # private_key内の改行文字を正規化
-        if "private_key" in key_data:
-            key_data["private_key"] = key_data["private_key"].replace("\\n", "\n")
-        credentials = service_account.Credentials.from_service_account_info(
-            key_data,
-            scopes=["https://www.googleapis.com/auth/drive.readonly"],
-        )
+        # Secret File があればそちらを優先（PEMエスケープ問題を回避）
+        if os.path.exists(_SECRET_FILE_PATH):
+            credentials = service_account.Credentials.from_service_account_file(
+                _SECRET_FILE_PATH,
+                scopes=["https://www.googleapis.com/auth/drive.readonly"],
+            )
+        else:
+            # 環境変数からJSON文字列として読む
+            raw_key = _SERVICE_ACCOUNT_KEY
+            key_data = json.loads(raw_key)
+            if "private_key" in key_data:
+                key_data["private_key"] = key_data["private_key"].replace("\\n", "\n")
+            credentials = service_account.Credentials.from_service_account_info(
+                key_data,
+                scopes=["https://www.googleapis.com/auth/drive.readonly"],
+            )
         _drive_service = build("drive", "v3", credentials=credentials)
         return _drive_service
     except Exception as e:
