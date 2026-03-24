@@ -8,6 +8,7 @@ from tools.calculator import TOOL_DEF as CALCULATOR_DEF, execute as calculator_e
 from tools.file_reader import TOOL_DEF as FILE_READER_DEF, execute as file_reader_execute
 from tools.web_search import TOOL_DEF as WEB_SEARCH_DEF, execute as web_search_execute
 from tools.document_writer import TOOL_DEF as DOCUMENT_WRITER_DEF, execute as document_writer_execute
+from tools.google_drive import TOOL_DEF as GOOGLE_DRIVE_DEF, execute as google_drive_execute
 
 # ツール名 → (定義, 実行関数) のマッピング
 _TOOL_REGISTRY = {
@@ -16,6 +17,7 @@ _TOOL_REGISTRY = {
     "file_reader": (FILE_READER_DEF, file_reader_execute),
     "web_search": (WEB_SEARCH_DEF, web_search_execute),
     "document_writer": (DOCUMENT_WRITER_DEF, document_writer_execute),
+    "google_drive": (GOOGLE_DRIVE_DEF, google_drive_execute),
 }
 
 # 全ツール定義リスト（Claude API に渡す用）

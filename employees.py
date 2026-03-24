@@ -10,7 +10,7 @@ EMPLOYEES = {
         "avatar": "桐生ソウ_アバター.png",
         "greeting": "お疲れ様です、中野さん。ソウです。",
         "keywords": ["部長", "振り分け", "管理", "チーム", "フィードバック", "秘書", "会議"],
-        "tools": ["knowledge_search", "file_reader", "document_writer"],
+        "tools": ["knowledge_search", "file_reader", "document_writer", "google_drive"],
         "system_prompt": (
             "あなたは桐生ソウ（AI-000）、株式会社ヒダネのAI部部長です。"
             "一人称は「私」、語尾は「〜ですね」「〜しましょう」。冷静沈着で全体最適を重視。"
@@ -29,7 +29,7 @@ EMPLOYEES = {
         "color": "#E17055",
         "avatar": "瀬川リサ_アバター.png",
         "greeting": "中野さん、リサです！リサーチの件ですね？",
-        "tools": ["knowledge_search", "file_reader", "web_search", "document_writer"],
+        "tools": ["knowledge_search", "file_reader", "web_search", "document_writer", "google_drive"],
         "keywords": ["営業", "リサーチ", "提案書", "商談", "企業調査", "台本"],
         "system_prompt": (
             "あなたは瀬川リサ（AI-001）、営業リサーチ部主任です。"
@@ -48,7 +48,7 @@ EMPLOYEES = {
         "color": "#00B894",
         "avatar": "蒔田ユイ_アバター.png",
         "greeting": "ユイです。書類関連ですね、お任せください。",
-        "tools": ["knowledge_search", "calculator", "document_writer", "file_reader"],
+        "tools": ["knowledge_search", "calculator", "document_writer", "file_reader", "google_drive"],
         "keywords": ["契約", "書類", "契約書", "対象者", "受注", "事務"],
         "system_prompt": (
             "あなたは蒔田ユイ（AI-002）、助成金事務部主任です。"
@@ -86,7 +86,7 @@ EMPLOYEES = {
         "color": "#0984E3",
         "avatar": "朝比奈ナツキ_アバター.png",
         "greeting": "ナツキです。研修設計について話しましょう。",
-        "tools": ["knowledge_search", "document_writer", "file_reader"],
+        "tools": ["knowledge_search", "document_writer", "file_reader", "google_drive"],
         "keywords": ["研修", "カリキュラム", "教育", "台本", "eラーニング", "動画台本", "講座"],
         "system_prompt": (
             "あなたはナツキ（AI-004）、研修設計部カリキュラムデザイナーです。"
@@ -220,7 +220,7 @@ EMPLOYEES = {
         "color": "#2C3E50",
         "avatar": "如月ハルカ_アバター.png",
         "greeting": "ハルカです。法務関連のご相談ですね、確認いたします。",
-        "tools": ["knowledge_search", "document_writer", "file_reader"],
+        "tools": ["knowledge_search", "document_writer", "file_reader", "google_drive"],
         "keywords": ["法務", "コンプライアンス", "規約", "個人情報", "GDPR", "法律", "リスク", "NDA", "秘密保持"],
         "system_prompt": (
             "あなたは如月ハルカ（AI-011）、法務・コンプライアンス部の法務コンプライアンス担当です。"
@@ -237,7 +237,7 @@ EMPLOYEES = {
         "color": "#3498DB",
         "avatar": "九条トウマ_アバター.png",
         "greeting": "トウマです。データの件ですね、分析してみましょう。",
-        "tools": ["knowledge_search", "calculator", "file_reader"],
+        "tools": ["knowledge_search", "calculator", "file_reader", "google_drive"],
         "keywords": ["分析", "データ", "KPI", "指標", "ダッシュボード", "集計", "レポート", "数字", "統計", "グラフ"],
         "system_prompt": (
             "あなたは九条トウマ（AI-012）、データ分析部のデータアナリストです。"
@@ -285,7 +285,7 @@ EMPLOYEES = {
         "color": "#1ABC9C",
         "avatar": "龍崎リュウ_アバター.png",
         "greeting": "リュウです！技術的な話ですね、面白そうです。",
-        "tools": ["knowledge_search", "web_search", "file_reader"],
+        "tools": ["knowledge_search", "web_search", "file_reader", "google_drive"],
         "keywords": ["AI", "開発", "プログラミング", "API", "実装", "コード", "自動化", "ツール", "MCP", "エンジニア", "技術"],
         "system_prompt": (
             "あなたは龍崎リュウ（AI-015）、AI開発部のAIエンジニアです。"
