@@ -132,6 +132,12 @@ def api_consent_agree():
     return jsonify({"status": "ok", "user_id": user_id})
 
 
+def _is_public_mode() -> bool:
+    """認証トークンがなければ公開モード（機密情報を出さない）"""
+    token = _extract_token()
+    return verify_token(token) is None
+
+
 @app.route("/api/employees")
 def api_employees():
     """全AI社員リスト"""
@@ -156,11 +162,14 @@ def api_chat():
     employee_name = target if target and target in EMPLOYEES else route_message(message)
     emp = get_employee(employee_name)
 
+    # 公開モード判定（認証なし＝外部ユーザー＝機密非公開）
+    public_mode = _is_public_mode()
+
     # API呼び出し
     if ANTHROPIC_API_KEY:
         # DB履歴を使用（メモリ内ではなくSQLiteから取得）
         history = get_history(session_id, limit=10)
-        system = build_system_prompt(emp, employee_name, company_id)
+        system = build_system_prompt(emp, employee_name, company_id, public_mode=public_mode)
         response_text = _call_claude_api(message, history, system)
     else:
         response_text = _generate_mock_response(message, emp)
@@ -197,10 +206,11 @@ def api_chat_stream():
     if not message.strip():
         return jsonify({"error": "メッセージを入力してください"}), 400
 
+    public_mode = _is_public_mode()
     employee_name = target if target and target in EMPLOYEES else route_message(message)
     emp = get_employee(employee_name)
     history = get_history(session_id, limit=10)
-    system = build_system_prompt(emp, employee_name, company_id)
+    system = build_system_prompt(emp, employee_name, company_id, public_mode=public_mode)
 
     def on_complete(full_text):
         """ストリーム完了時にDB保存"""
@@ -257,12 +267,13 @@ def api_chat_department():
     if dept_name not in DEPARTMENTS:
         return jsonify({"error": "Unknown department"}), 400
 
+    public_mode = _is_public_mode()
     responder_name = get_department_responder(dept_name, message)
     emp = get_employee(responder_name)
 
     if ANTHROPIC_API_KEY:
         history = get_history(session_id, limit=10)
-        system = build_system_prompt(emp, responder_name, company_id)
+        system = build_system_prompt(emp, responder_name, company_id, public_mode=public_mode)
         response_text = _call_claude_api(message, history, system)
     else:
         response_text = _generate_mock_response(message, emp)

@@ -6,7 +6,7 @@
     <title>ヒダネ AI社員チャット</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
     <meta property="og:title" content="ヒダネ AI社員チャット">
-    <meta property="og:description" content="11名のAI社員があなたの業務をサポート。営業・助成金・SNS・経理まで、チームで対応します。">
+    <meta property="og:description" content="17名のAI社員があなたの質問にお答えします。研修・助成金・SNS・AIコンサルまで、チームで対応します。">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://hidane-ai-chat.onrender.com">
     <meta property="og:image" content="https://hidane-ai-chat.onrender.com/static/ogp.png">
@@ -48,7 +48,6 @@
                 <button class="btn-auto active" id="btnAutoRoute" title="自動振り分けモード">
                     🤖 自動振り分け ON
                 </button>
-                <a href="/auth/logout" class="btn-logout" title="ログアウト" style="margin-left:8px;color:#9898b0;text-decoration:none;font-size:20px;">🚪</a>
             </div>
         </header>
 
@@ -57,14 +56,14 @@
             <div class="welcome-message" id="welcomeMessage">
                 <div class="welcome-icon">🔥</div>
                 <h2 id="welcomeTitle">ヒダネ AI社員チャット</h2>
-                <p id="welcomeDesc">メッセージを送信すると<br>内容に応じて最適なAI社員が自動で対応します。</p>
+                <p id="welcomeDesc">17名のAI社員があなたの質問にお答えします。<br>メッセージを送ると、内容に応じて最適な社員が自動で対応します。</p>
                 <div class="quick-actions">
-                    <button class="quick-btn" data-msg="今週の営業進捗を教えて">📊 営業進捗</button>
-                    <button class="quick-btn" data-msg="TikTok台本を作って">🎬 TikTok台本</button>
-                    <button class="quick-btn" data-msg="助成金の申請状況は？">💰 助成金確認</button>
-                    <button class="quick-btn" data-msg="提案書を準備して">📝 提案書作成</button>
-                    <button class="quick-btn" data-msg="DMリストを作成して">📨 DMリスト</button>
-                    <button class="quick-btn" data-msg="今月のKPIレポート">📈 KPIレポート</button>
+                    <button class="quick-btn" data-msg="ヒダネの研修サービスについて教えてください">📚 研修について聞く</button>
+                    <button class="quick-btn" data-msg="助成金を使った研修の仕組みを教えてください">💰 助成金の仕組み</button>
+                    <button class="quick-btn" data-msg="どんなAI研修コースがありますか？">🤖 AI研修コース</button>
+                    <button class="quick-btn" data-msg="SNS運用代行のサービス内容を教えてください">📱 SNS運用代行</button>
+                    <button class="quick-btn" data-msg="動画内製化研修について詳しく知りたいです">🎬 動画研修</button>
+                    <button class="quick-btn" data-msg="AIコンサルティングではどんなことができますか？">💡 AIコンサル</button>
                 </div>
             </div>
             <div class="messages" id="messages"></div>
