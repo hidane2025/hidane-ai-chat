@@ -70,7 +70,12 @@ def _get_drive_service():
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
 
-        key_data = json.loads(_SERVICE_ACCOUNT_KEY)
+        # 環境変数経由でJSONを読む場合、\nが\\nにエスケープされることがある
+        raw_key = _SERVICE_ACCOUNT_KEY
+        key_data = json.loads(raw_key)
+        # private_key内の改行文字を正規化
+        if "private_key" in key_data:
+            key_data["private_key"] = key_data["private_key"].replace("\\n", "\n")
         credentials = service_account.Credentials.from_service_account_info(
             key_data,
             scopes=["https://www.googleapis.com/auth/drive.readonly"],
