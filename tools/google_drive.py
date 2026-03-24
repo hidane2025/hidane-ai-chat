@@ -1,6 +1,6 @@
 """
-Google Drive 検索・読み取りツール
-サービスアカウント経由で指定フォルダ内のファイルを検索・閲覧する。
+Google Drive 検索・読み取り・整理ツール
+OAuth認証経由でDrive内のファイル検索・閲覧・整理（名前変更・移動・フォルダ作成）を行う。
 """
 
 import os
@@ -11,29 +11,43 @@ from typing import Optional
 TOOL_DEF = {
     "name": "google_drive",
     "description": (
-        "Google Driveのファイルを検索・閲覧するツール。"
-        "商談先の資料、提案書、契約書、研修資料などを検索して内容を読み取れます。"
-        "action: search（キーワード検索）、read（ファイル内容読み取り）、list（フォルダ内一覧）"
+        "Google Driveのファイルを検索・閲覧・整理するツール。"
+        "商談先の資料、提案書、契約書、研修資料などを検索・読み取りできます。"
+        "フォルダ・ファイルの名前変更、移動、フォルダ作成も可能です。"
+        "action: search（検索）、read（読み取り）、list（一覧）、"
+        "rename（名前変更）、move（移動）、create_folder（フォルダ作成）"
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["search", "read", "list"],
-                "description": "実行するアクション。search=キーワード検索、read=ファイル読み取り、list=フォルダ内一覧",
+                "enum": ["search", "read", "list", "rename", "move", "create_folder"],
+                "description": (
+                    "実行するアクション。"
+                    "search=キーワード検索、read=ファイル読み取り、list=フォルダ内一覧、"
+                    "rename=名前変更、move=移動、create_folder=フォルダ作成"
+                ),
             },
             "query": {
                 "type": "string",
-                "description": "検索キーワード（action=searchの場合に使用）",
+                "description": "検索キーワード（action=searchの場合）",
             },
             "file_id": {
                 "type": "string",
-                "description": "読み取るファイルのID（action=readの場合に使用）",
+                "description": "対象ファイル/フォルダのID（action=read/rename/moveの場合）",
             },
             "folder_id": {
                 "type": "string",
-                "description": "一覧を取得するフォルダのID（action=listの場合。省略時はルートフォルダ）",
+                "description": "フォルダID（action=listの場合は対象フォルダ、action=create_folderの場合は親フォルダ）",
+            },
+            "new_name": {
+                "type": "string",
+                "description": "新しい名前（action=rename/create_folderの場合）",
+            },
+            "destination_folder_id": {
+                "type": "string",
+                "description": "移動先フォルダのID（action=moveの場合）",
             },
             "max_results": {
                 "type": "integer",
@@ -305,6 +319,80 @@ def _truncate(text: str, max_chars: int) -> str:
     return text[:max_chars] + f"\n\n...（以降省略、全{len(text)}文字）"
 
 
+def _rename_file(file_id: str, new_name: str) -> str:
+    """ファイルまたはフォルダの名前を変更する。"""
+    service = _get_drive_service()
+    if service is None:
+        return _fallback_message("rename")
+
+    try:
+        old_meta = service.files().get(fileId=file_id, fields="name").execute()
+        old_name = old_meta.get("name", "不明")
+
+        updated = (
+            service.files()
+            .update(fileId=file_id, body={"name": new_name}, fields="id, name")
+            .execute()
+        )
+        return f"名前を変更しました: 「{old_name}」→「{updated['name']}」"
+    except Exception as e:
+        return f"名前変更エラー: {str(e)}"
+
+
+def _move_file(file_id: str, destination_folder_id: str) -> str:
+    """ファイルまたはフォルダを別のフォルダに移動する。"""
+    service = _get_drive_service()
+    if service is None:
+        return _fallback_message("move")
+
+    try:
+        meta = (
+            service.files()
+            .get(fileId=file_id, fields="name, parents")
+            .execute()
+        )
+        name = meta.get("name", "不明")
+        previous_parents = ",".join(meta.get("parents", []))
+
+        service.files().update(
+            fileId=file_id,
+            addParents=destination_folder_id,
+            removeParents=previous_parents,
+            fields="id, name, parents",
+        ).execute()
+
+        return f"「{name}」を移動しました。"
+    except Exception as e:
+        return f"移動エラー: {str(e)}"
+
+
+def _create_folder(name: str, parent_folder_id: Optional[str] = None) -> str:
+    """新しいフォルダを作成する。"""
+    service = _get_drive_service()
+    if service is None:
+        return _fallback_message("create_folder")
+
+    try:
+        body = {
+            "name": name,
+            "mimeType": "application/vnd.google-apps.folder",
+        }
+        if parent_folder_id:
+            body["parents"] = [parent_folder_id]
+
+        folder = (
+            service.files()
+            .create(body=body, fields="id, name, webViewLink")
+            .execute()
+        )
+        return (
+            f"フォルダ「{folder['name']}」を作成しました。\n"
+            f"ID: {folder['id']}"
+        )
+    except Exception as e:
+        return f"フォルダ作成エラー: {str(e)}"
+
+
 def _fallback_message(action: str) -> str:
     """サービスアカウント未設定時のメッセージ。"""
     return (
@@ -334,4 +422,25 @@ def execute(params: dict) -> str:
             return "ファイルIDを指定してください。"
         return _read_file(file_id)
 
-    return f"不明なアクション: {action}。search / read / list のいずれかを指定してください。"
+    if action == "rename":
+        file_id = params.get("file_id", "")
+        new_name = params.get("new_name", "")
+        if not file_id or not new_name:
+            return "file_id と new_name を指定してください。"
+        return _rename_file(file_id, new_name)
+
+    if action == "move":
+        file_id = params.get("file_id", "")
+        dest = params.get("destination_folder_id", "")
+        if not file_id or not dest:
+            return "file_id と destination_folder_id を指定してください。"
+        return _move_file(file_id, dest)
+
+    if action == "create_folder":
+        new_name = params.get("new_name", "")
+        if not new_name:
+            return "new_name（フォルダ名）を指定してください。"
+        parent = params.get("folder_id")
+        return _create_folder(new_name, parent)
+
+    return f"不明なアクション: {action}。search / read / list / rename / move / create_folder のいずれかを指定してください。"
