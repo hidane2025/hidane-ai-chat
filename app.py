@@ -88,14 +88,7 @@ CONSENT_VERSION = "1.0"
 
 @app.route("/")
 def index():
-    """メインチャットUI"""
-    token = request.cookies.get("auth_token")
-    payload = verify_token(token) if token else None
-    if not payload:
-        return redirect("/auth/login")
-    user_id = payload.get("user_id", "")
-    if not _user_has_full_consent(user_id):
-        return redirect("/consent")
+    """メインチャットUI（ログイン不要・公開）"""
     return render_template("chat.html")
 
 
@@ -170,7 +163,6 @@ def api_employees():
 
 @app.route("/api/chat", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60)
-@require_auth
 def api_chat():
     """チャットAPI"""
     start_time = time.time()
@@ -217,7 +209,6 @@ def api_chat():
 
 @app.route("/api/chat/stream", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60)
-@require_auth
 def api_chat_stream():
     """SSEストリーミングチャットAPI"""
     data = request.json or {}
@@ -277,7 +268,6 @@ def api_departments():
 
 @app.route("/api/chat/department", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60)
-@require_auth
 def api_chat_department():
     """部署グループチャットAPI"""
     start_time = time.time()
@@ -319,7 +309,6 @@ def api_chat_department():
 
 
 @app.route("/api/history/<channel_id>")
-@require_auth
 def api_history(channel_id):
     """チャネル別の会話履歴を取得（DBから）"""
     history = get_history(channel_id, limit=50)
@@ -327,7 +316,6 @@ def api_history(channel_id):
 
 
 @app.route("/api/export/<session_id>")
-@require_auth
 def api_export(session_id):
     """会話エクスポート"""
     fmt = request.args.get("format", "json")
@@ -383,7 +371,6 @@ def list_files():
 
 @app.route("/api/upload", methods=["POST"])
 @rate_limit(max_requests=10, window_seconds=60)
-@require_auth
 def api_upload():
     """ファイルアップロード（ユーザー→AI社員）"""
     from file_handler import validate_file, save_upload
