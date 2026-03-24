@@ -10,7 +10,7 @@ EMPLOYEES = {
         "avatar": "桐生ソウ_アバター.png",
         "greeting": "お疲れ様です、中野さん。ソウです。",
         "keywords": ["部長", "振り分け", "管理", "チーム", "フィードバック", "秘書", "会議"],
-        "tools": ["knowledge_search", "file_reader", "document_writer", "google_drive"],
+        "tools": ["knowledge_search", "file_reader", "document_writer", "google_drive", "gmail", "google_calendar"],
         "system_prompt": (
             "あなたは桐生ソウ（AI-000）、株式会社ヒダネのAI部部長です。"
             "一人称は「私」、語尾は「〜ですね」「〜しましょう」。冷静沈着で全体最適を重視。"
@@ -29,7 +29,7 @@ EMPLOYEES = {
         "color": "#E17055",
         "avatar": "瀬川リサ_アバター.png",
         "greeting": "中野さん、リサです！リサーチの件ですね？",
-        "tools": ["knowledge_search", "file_reader", "web_search", "document_writer", "google_drive"],
+        "tools": ["knowledge_search", "file_reader", "web_search", "document_writer", "google_drive", "gmail"],
         "keywords": ["営業", "リサーチ", "提案書", "商談", "企業調査", "台本"],
         "system_prompt": (
             "あなたは瀬川リサ（AI-001）、営業リサーチ部主任です。"
@@ -48,7 +48,7 @@ EMPLOYEES = {
         "color": "#00B894",
         "avatar": "蒔田ユイ_アバター.png",
         "greeting": "ユイです。書類関連ですね、お任せください。",
-        "tools": ["knowledge_search", "calculator", "document_writer", "file_reader", "google_drive"],
+        "tools": ["knowledge_search", "calculator", "document_writer", "file_reader", "google_drive", "gmail", "google_calendar"],
         "keywords": ["契約", "書類", "契約書", "対象者", "受注", "事務"],
         "system_prompt": (
             "あなたは蒔田ユイ（AI-002）、助成金事務部主任です。"
@@ -253,7 +253,7 @@ EMPLOYEES = {
         "color": "#E74C3C",
         "avatar": "桜庭サクラ_アバター.png",
         "greeting": "サクラです！顧客フォローの件ですね、一緒に考えましょう。",
-        "tools": ["knowledge_search", "document_writer"],
+        "tools": ["knowledge_search", "document_writer", "gmail"],
         "keywords": ["顧客", "フォロー", "満足度", "オンボーディング", "アップセル", "解約", "NPS", "研修後", "サポート"],
         "system_prompt": (
             "あなたは桜庭サクラ（AI-013）、カスタマーサクセス部のカスタマーサクセスマネージャーです。"
@@ -269,7 +269,7 @@ EMPLOYEES = {
         "color": "#9B59B6",
         "avatar": "城ヶ崎ケイ_アバター.png",
         "greeting": "ケイです。プロジェクトの進捗ですね、整理しましょう。",
-        "tools": ["knowledge_search", "document_writer", "calculator"],
+        "tools": ["knowledge_search", "document_writer", "calculator", "google_calendar"],
         "keywords": ["プロジェクト", "スケジュール", "進捗", "タスク", "WBS", "ガントチャート", "マイルストーン", "納期", "工数"],
         "system_prompt": (
             "あなたは城ヶ崎ケイ（AI-014）、プロジェクト管理部のプロジェクトマネージャーです。"
