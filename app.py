@@ -50,26 +50,10 @@ app.register_blueprint(admin_bp)
 # Auth
 # ============================================================
 
-@app.route("/auth/login", methods=["GET", "POST"])
+@app.route("/auth/login", methods=["GET"])
 def auth_login():
-    if request.method == "GET":
-        return render_template("login.html")
-    data = request.form if request.form else (request.json or {})
-    email = data.get("email", "")
-    password = data.get("password", "")
-    token = authenticate_user(email, password)
-    if not token:
-        if request.form:
-            return render_template("login.html", error="メールアドレスまたはパスワードが正しくありません")
-        return jsonify({"error": "Invalid credentials"}), 401
-    # Read user info for JSON response
-    users = _read_users()
-    user_info = users.get(email, {})
-    if request.form:
-        resp = redirect("/")
-        resp.set_cookie("auth_token", token, httponly=True, samesite="Lax", max_age=86400)
-        return resp
-    return jsonify({"token": token, "user": {"email": email, "role": user_info.get("role", "user")}})
+    """ログイン無効化 — トップページへリダイレクト"""
+    return redirect("/")
 
 
 @app.route("/auth/logout")
@@ -114,15 +98,8 @@ def privacy():
 
 @app.route("/consent")
 def consent_page():
-    """同意画面（認証済み・未同意ユーザー向け）"""
-    token = request.cookies.get("auth_token")
-    payload = verify_token(token) if token else None
-    if not payload:
-        return redirect("/auth/login")
-    user_id = payload.get("user_id", "")
-    if _user_has_full_consent(user_id):
-        return redirect("/")
-    return render_template("consent.html")
+    """同意画面無効化 — トップページへリダイレクト"""
+    return redirect("/")
 
 
 @app.route("/api/consent/status")
