@@ -92,6 +92,7 @@ class ChatStream {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
                 signal: abortController.signal,
+                credentials: "same-origin",
             });
 
             if (!response.ok) {

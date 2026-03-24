@@ -118,6 +118,7 @@ async function checkApiStatus() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: "ping", session_id: "check" }),
+            credentials: "same-origin",
         });
         const data = await res.json();
         const isDemo = data.message.includes("デモモード");
@@ -697,6 +698,7 @@ async function fallbackToRegularApi(text, channelId) {
                     department: ch.name,
                     session_id: channelId,
                 }),
+                credentials: "same-origin",
             });
         } else if (ch.type === "employee") {
             res = await fetch("/api/chat", {
@@ -707,6 +709,7 @@ async function fallbackToRegularApi(text, channelId) {
                     employee: ch.name,
                     session_id: channelId,
                 }),
+                credentials: "same-origin",
             });
         } else {
             res = await fetch("/api/chat", {
@@ -716,6 +719,7 @@ async function fallbackToRegularApi(text, channelId) {
                     message: text,
                     session_id: channelId,
                 }),
+                credentials: "same-origin",
             });
         }
 
