@@ -23,7 +23,7 @@ def call_claude_with_tools(
     message: str,
     history: list,
     system_prompt: str,
-    tools: list[dict] | None = None,
+    tools=None,
 ) -> str:
     """Claude APIをツール実行ループ付きで呼び出す。最終テキストを返す。
 

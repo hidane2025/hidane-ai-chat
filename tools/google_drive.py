@@ -1,6 +1,6 @@
 """
-Google Drive 検索・読み取り・整理ツール
-サービスアカウント経由で指定フォルダ内のファイルを検索・閲覧・整理する。
+Google Drive 検索・読み取りツール
+サービスアカウント経由で指定フォルダ内のファイルを検索・閲覧する。
 """
 
 import os
@@ -11,42 +11,29 @@ from typing import Optional
 TOOL_DEF = {
     "name": "google_drive",
     "description": (
-        "Google Driveのファイルを検索・閲覧・整理するツール。"
+        "Google Driveのファイルを検索・閲覧するツール。"
         "商談先の資料、提案書、契約書、研修資料などを検索して内容を読み取れます。"
-        "フォルダ作成・ファイル移動・名前変更・コピー・削除も可能です。"
-        "action: search, read, list, create_folder, move, rename, copy, delete"
+        "action: search（キーワード検索）、read（ファイル内容読み取り）、list（フォルダ内一覧）"
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": [
-                    "search", "read", "list",
-                    "create_folder", "move", "rename", "copy", "delete",
-                ],
-                "description": (
-                    "実行するアクション。"
-                    "search=キーワード検索、read=ファイル読み取り、list=フォルダ内一覧、"
-                    "create_folder=フォルダ作成、move=ファイル移動、"
-                    "rename=名前変更、copy=コピー、delete=ゴミ箱へ移動"
-                ),
+                "enum": ["search", "read", "list"],
+                "description": "実行するアクション。search=キーワード検索、read=ファイル読み取り、list=フォルダ内一覧",
             },
             "query": {
                 "type": "string",
-                "description": "検索キーワード（action=searchの場合）",
+                "description": "検索キーワード（action=searchの場合に使用）",
             },
             "file_id": {
                 "type": "string",
-                "description": "対象ファイル/フォルダのID（read, move, rename, copy, deleteで使用）",
+                "description": "読み取るファイルのID（action=readの場合に使用）",
             },
             "folder_id": {
                 "type": "string",
-                "description": "フォルダID（list=対象フォルダ、move=移動先、create_folder=親フォルダ）",
-            },
-            "name": {
-                "type": "string",
-                "description": "新しい名前（create_folder=フォルダ名、rename=新ファイル名）",
+                "description": "一覧を取得するフォルダのID（action=listの場合。省略時はルートフォルダ）",
             },
             "max_results": {
                 "type": "integer",
@@ -63,64 +50,50 @@ ROOT_FOLDER_ID = os.environ.get(
     "1ldU_588zYPJVybNjiy2D6GvBXu88qk7d",
 )
 
-# サービスアカウント認証情報
-# 優先順位: 1. Secret File  2. 環境変数JSON文字列
-_SECRET_FILE_PATH = "/etc/secrets/google_service_account.json"
-_SERVICE_ACCOUNT_KEY = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY", "")
-
-# 書き込みスコープ（フォルダ整理に必要）
-_DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
+# OAuth認証情報（リフレッシュトークン方式）
+_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+_OAUTH_REFRESH_TOKEN = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "")
 
 # キャッシュ: Drive API サービスインスタンス
 _drive_service = None
 
 
 def _get_drive_service():
-    """Google Drive APIサービスのシングルトンを返す。"""
+    """Google Drive APIサービスのシングルトンを返す（OAuth認証）。"""
     global _drive_service
     if _drive_service is not None:
         return _drive_service
 
+    if not all([_OAUTH_CLIENT_ID, _OAUTH_CLIENT_SECRET, _OAUTH_REFRESH_TOKEN]):
+        return None
+
     try:
-        from google.oauth2 import service_account
+        from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
 
-        # Secret File があればそちらを優先（PEMエスケープ問題を回避）
-        if os.path.exists(_SECRET_FILE_PATH):
-            credentials = service_account.Credentials.from_service_account_file(
-                _SECRET_FILE_PATH,
-                scopes=_DRIVE_SCOPES,
-            )
-        elif _SERVICE_ACCOUNT_KEY:
-            # 環境変数からJSON文字列として読む
-            key_data = json.loads(_SERVICE_ACCOUNT_KEY)
-            if "private_key" in key_data:
-                key_data["private_key"] = key_data["private_key"].replace("\\n", "\n")
-            credentials = service_account.Credentials.from_service_account_info(
-                key_data,
-                scopes=_DRIVE_SCOPES,
-            )
-        else:
-            return None
-
+        credentials = Credentials(
+            token=None,
+            refresh_token=_OAUTH_REFRESH_TOKEN,
+            client_id=_OAUTH_CLIENT_ID,
+            client_secret=_OAUTH_CLIENT_SECRET,
+            token_uri="https://oauth2.googleapis.com/token",
+        )
         _drive_service = build("drive", "v3", credentials=credentials)
         return _drive_service
     except Exception as e:
-        print(f"[google_drive] サービス初期化エラー: {e}")
+        print(f"[google_drive] OAuth初期化エラー: {e}")
         return None
 
-
-# ============================================================
-# 読み取り系アクション
-# ============================================================
 
 def _search_files(query: str, max_results: int = 10) -> str:
     """キーワードでDrive内を検索する。"""
     service = _get_drive_service()
     if service is None:
-        return _fallback_message()
+        return _fallback_message("search")
 
     try:
+        # ルートフォルダ配下のみ検索（サブフォルダ含む）
         q_parts = [
             f"fullText contains '{_escape_query(query)}'",
             "trashed = false",
@@ -132,7 +105,7 @@ def _search_files(query: str, max_results: int = 10) -> str:
             .list(
                 q=q_string,
                 pageSize=min(max_results, 20),
-                fields="files(id, name, mimeType, modifiedTime, parents, size)",
+                fields="files(id, name, mimeType, modifiedTime, parents, size, webViewLink)",
                 orderBy="relevance",
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,
@@ -164,7 +137,7 @@ def _list_folder(folder_id: Optional[str] = None, max_results: int = 20) -> str:
     """フォルダ内のファイル一覧を取得する。"""
     service = _get_drive_service()
     if service is None:
-        return _fallback_message()
+        return _fallback_message("list")
 
     target_id = folder_id or ROOT_FOLDER_ID
 
@@ -203,9 +176,7 @@ def _list_folder(folder_id: Optional[str] = None, max_results: int = 20) -> str:
                 mime = _friendly_mime(f.get("mimeType", ""))
                 size_str = _format_size(f.get("size"))
                 mod_time = f.get("modifiedTime", "")[:10]
-                lines.append(
-                    f"  - {f['name']}  [{mime}] {size_str} ({mod_time})  ID: {f['id']}"
-                )
+                lines.append(f"  - {f['name']}  [{mime}] {size_str} ({mod_time})  ID: {f['id']}")
 
         return "\n".join(lines)
 
@@ -214,12 +185,13 @@ def _list_folder(folder_id: Optional[str] = None, max_results: int = 20) -> str:
 
 
 def _read_file(file_id: str) -> str:
-    """ファイルの内容を読み取る。"""
+    """ファイルの内容を読み取る。Google DocsはテキストExport、その他はダウンロード。"""
     service = _get_drive_service()
     if service is None:
-        return _fallback_message()
+        return _fallback_message("read")
 
     try:
+        # ファイルのメタデータ取得
         meta = (
             service.files()
             .get(fileId=file_id, fields="id, name, mimeType, size")
@@ -229,223 +201,62 @@ def _read_file(file_id: str) -> str:
         name = meta.get("name", "不明")
         size = int(meta.get("size", 0))
 
-        # Google Docs → テキスト export
+        # Google Docsはテキストとしてexport
         if mime == "application/vnd.google-apps.document":
-            content = service.files().export(fileId=file_id, mimeType="text/plain").execute()
+            content = (
+                service.files()
+                .export(fileId=file_id, mimeType="text/plain")
+                .execute()
+            )
             text = content.decode("utf-8") if isinstance(content, bytes) else str(content)
             return _truncate(f"📄 {name}\n\n{text}", 8000)
 
-        # Google Slides → テキスト抽出
+        # Google Slidesはテキスト抽出
         if mime == "application/vnd.google-apps.presentation":
-            content = service.files().export(fileId=file_id, mimeType="text/plain").execute()
+            content = (
+                service.files()
+                .export(fileId=file_id, mimeType="text/plain")
+                .execute()
+            )
             text = content.decode("utf-8") if isinstance(content, bytes) else str(content)
             return _truncate(f"📊 {name}（スライド）\n\n{text}", 8000)
 
-        # Google Sheets → CSV export
+        # Google Sheetsはcsv export
         if mime == "application/vnd.google-apps.spreadsheet":
-            content = service.files().export(fileId=file_id, mimeType="text/csv").execute()
+            content = (
+                service.files()
+                .export(fileId=file_id, mimeType="text/csv")
+                .execute()
+            )
             text = content.decode("utf-8") if isinstance(content, bytes) else str(content)
             return _truncate(f"📊 {name}（スプレッドシート）\n\n{text}", 8000)
 
-        # テキスト系ファイル
+        # テキスト系ファイル（md, txt, csv, json）
         text_extensions = (".txt", ".md", ".csv", ".json", ".log", ".py", ".js", ".html")
         if any(name.lower().endswith(ext) for ext in text_extensions):
             if size > 500_000:
-                return f"⚠️ {name} はサイズが大きすぎます（{_format_size(str(size))}）。"
+                return f"⚠️ {name} はサイズが大きすぎます（{_format_size(str(size))}）。概要のみ参照してください。"
             from googleapiclient.http import MediaIoBaseDownload
-            req = service.files().get_media(fileId=file_id)
+            request = service.files().get_media(fileId=file_id)
             buffer = io.BytesIO()
-            downloader = MediaIoBaseDownload(buffer, req)
+            downloader = MediaIoBaseDownload(buffer, request)
             done = False
             while not done:
                 _, done = downloader.next_chunk()
             text = buffer.getvalue().decode("utf-8", errors="replace")
             return _truncate(f"📄 {name}\n\n{text}", 8000)
 
-        # バイナリファイル
+        # PDF等のバイナリファイル
         return (
             f"📎 {name}\n"
             f"種類: {_friendly_mime(mime)} | サイズ: {_format_size(meta.get('size'))}\n"
-            f"※ バイナリファイルのため内容の直接表示はできません。"
+            f"※ バイナリファイルのため内容の直接表示はできません。\n"
+            f"Google Driveで開いて確認してください。"
         )
 
     except Exception as e:
         return f"ファイル読み取りエラー: {str(e)}"
 
-
-# ============================================================
-# 書き込み系アクション（フォルダ整理）
-# ============================================================
-
-def _create_folder(name: str, parent_id: Optional[str] = None) -> str:
-    """フォルダを作成する。"""
-    service = _get_drive_service()
-    if service is None:
-        return _fallback_message()
-
-    if not name:
-        return "フォルダ名を指定してください。"
-
-    target_parent = parent_id or ROOT_FOLDER_ID
-
-    try:
-        metadata = {
-            "name": name,
-            "mimeType": "application/vnd.google-apps.folder",
-            "parents": [target_parent],
-        }
-        folder = service.files().create(
-            body=metadata,
-            fields="id, name, webViewLink",
-            supportsAllDrives=True,
-        ).execute()
-
-        return (
-            f"✅ フォルダを作成しました\n"
-            f"名前: {folder['name']}\n"
-            f"ID: {folder['id']}"
-        )
-
-    except Exception as e:
-        return f"フォルダ作成エラー: {str(e)}"
-
-
-def _move_file(file_id: str, dest_folder_id: str) -> str:
-    """ファイルを別のフォルダに移動する。"""
-    service = _get_drive_service()
-    if service is None:
-        return _fallback_message()
-
-    if not file_id or not dest_folder_id:
-        return "ファイルIDと移動先フォルダIDを指定してください。"
-
-    try:
-        # 現在の親フォルダを取得
-        file_meta = service.files().get(
-            fileId=file_id,
-            fields="name, parents",
-            supportsAllDrives=True,
-        ).execute()
-
-        current_parents = ",".join(file_meta.get("parents", []))
-        file_name = file_meta.get("name", "不明")
-
-        # 移動（親フォルダを変更）
-        updated = service.files().update(
-            fileId=file_id,
-            addParents=dest_folder_id,
-            removeParents=current_parents,
-            fields="id, name, parents",
-            supportsAllDrives=True,
-        ).execute()
-
-        return f"✅ 「{file_name}」を移動しました（ID: {updated['id']}）"
-
-    except Exception as e:
-        return f"ファイル移動エラー: {str(e)}"
-
-
-def _rename_file(file_id: str, new_name: str) -> str:
-    """ファイル・フォルダの名前を変更する。"""
-    service = _get_drive_service()
-    if service is None:
-        return _fallback_message()
-
-    if not file_id or not new_name:
-        return "ファイルIDと新しい名前を指定してください。"
-
-    try:
-        # 現在の名前を取得
-        old_meta = service.files().get(
-            fileId=file_id,
-            fields="name",
-            supportsAllDrives=True,
-        ).execute()
-        old_name = old_meta.get("name", "不明")
-
-        updated = service.files().update(
-            fileId=file_id,
-            body={"name": new_name},
-            fields="id, name",
-            supportsAllDrives=True,
-        ).execute()
-
-        return f"✅ 名前を変更しました\n「{old_name}」→「{updated['name']}」"
-
-    except Exception as e:
-        return f"名前変更エラー: {str(e)}"
-
-
-def _copy_file(file_id: str, dest_folder_id: Optional[str] = None) -> str:
-    """ファイルをコピーする。"""
-    service = _get_drive_service()
-    if service is None:
-        return _fallback_message()
-
-    if not file_id:
-        return "コピー元のファイルIDを指定してください。"
-
-    try:
-        body = {}
-        if dest_folder_id:
-            body["parents"] = [dest_folder_id]
-
-        copied = service.files().copy(
-            fileId=file_id,
-            body=body,
-            fields="id, name, parents",
-            supportsAllDrives=True,
-        ).execute()
-
-        return (
-            f"✅ コピーしました\n"
-            f"名前: {copied['name']}\n"
-            f"ID: {copied['id']}"
-        )
-
-    except Exception as e:
-        return f"コピーエラー: {str(e)}"
-
-
-def _delete_file(file_id: str) -> str:
-    """ファイルをゴミ箱に移動する（完全削除ではない）。"""
-    service = _get_drive_service()
-    if service is None:
-        return _fallback_message()
-
-    if not file_id:
-        return "削除するファイルIDを指定してください。"
-
-    try:
-        # 名前を取得してから削除
-        meta = service.files().get(
-            fileId=file_id,
-            fields="name, mimeType",
-            supportsAllDrives=True,
-        ).execute()
-        name = meta.get("name", "不明")
-        is_folder = meta.get("mimeType") == "application/vnd.google-apps.folder"
-        item_type = "フォルダ" if is_folder else "ファイル"
-
-        # ゴミ箱へ移動（trashed=True）
-        service.files().update(
-            fileId=file_id,
-            body={"trashed": True},
-            supportsAllDrives=True,
-        ).execute()
-
-        return (
-            f"🗑️ {item_type}「{name}」をゴミ箱に移動しました\n"
-            f"※ Google Driveのゴミ箱から30日間は復元可能です"
-        )
-
-    except Exception as e:
-        return f"削除エラー: {str(e)}"
-
-
-# ============================================================
-# ユーティリティ
-# ============================================================
 
 def _escape_query(q: str) -> str:
     """Drive API クエリ用にエスケープ。"""
@@ -494,24 +305,19 @@ def _truncate(text: str, max_chars: int) -> str:
     return text[:max_chars] + f"\n\n...（以降省略、全{len(text)}文字）"
 
 
-def _fallback_message() -> str:
+def _fallback_message(action: str) -> str:
     """サービスアカウント未設定時のメッセージ。"""
     return (
         "Google Driveへの接続が設定されていません。\n"
-        "管理者にGOOGLE_SERVICE_ACCOUNT_KEY環境変数の設定を依頼してください。"
+        "管理者にGOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET / GOOGLE_OAUTH_REFRESH_TOKEN 環境変数の設定を依頼してください。"
     )
 
-
-# ============================================================
-# メインディスパッチャー
-# ============================================================
 
 def execute(params: dict) -> str:
     """ツール実行のエントリーポイント。"""
     action = params.get("action", "search")
     max_results = params.get("max_results", 10)
 
-    # 読み取り系
     if action == "search":
         query = params.get("query", "")
         if not query:
@@ -528,29 +334,4 @@ def execute(params: dict) -> str:
             return "ファイルIDを指定してください。"
         return _read_file(file_id)
 
-    # 書き込み系
-    if action == "create_folder":
-        name = params.get("name", "")
-        folder_id = params.get("folder_id")
-        return _create_folder(name, folder_id)
-
-    if action == "move":
-        file_id = params.get("file_id", "")
-        folder_id = params.get("folder_id", "")
-        return _move_file(file_id, folder_id)
-
-    if action == "rename":
-        file_id = params.get("file_id", "")
-        name = params.get("name", "")
-        return _rename_file(file_id, name)
-
-    if action == "copy":
-        file_id = params.get("file_id", "")
-        folder_id = params.get("folder_id")
-        return _copy_file(file_id, folder_id)
-
-    if action == "delete":
-        file_id = params.get("file_id", "")
-        return _delete_file(file_id)
-
-    return f"不明なアクション: {action}"
+    return f"不明なアクション: {action}。search / read / list のいずれかを指定してください。"

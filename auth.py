@@ -40,7 +40,7 @@ def create_token(user_id: str, company_id: str, role: str = "user") -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
-def verify_token(token: str) -> dict | None:
+def verify_token(token: str) -> dict:
     """Verify and decode a JWT token. Returns payload dict or None."""
     if not token:
         return None
@@ -50,7 +50,7 @@ def verify_token(token: str) -> dict | None:
         return None
 
 
-def _extract_token() -> str | None:
+def _extract_token() -> str:
     """Extract token from Authorization header or cookie. Returns str or None."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
@@ -92,7 +92,7 @@ def require_admin(f):
 # User authentication (DB-backed)
 # ---------------------------------------------------------------------------
 
-def authenticate_user(email: str, password: str) -> str | None:
+def authenticate_user(email: str, password: str) -> str:
     """Authenticate user by email and password. Returns token string or None."""
     user = db_get_user_by_email(email)
     if user is None:
@@ -109,7 +109,7 @@ def authenticate_user(email: str, password: str) -> str | None:
 
 
 def register_user(email: str, password: str, company_id: str,
-                   display_name: str = None, role: str = "user") -> dict | None:
+                   display_name: str = None, role: str = "user") -> dict:
     """Register a new user. Returns user dict (without password) or None if exists."""
     hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
     return db_create_user(

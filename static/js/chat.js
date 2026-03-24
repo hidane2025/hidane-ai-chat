@@ -575,6 +575,7 @@ function sendViaStreaming(text, channelId, ch, typingEl) {
             file_reader: "ファイルを確認中",
             web_search: "Webを検索中",
             document_writer: "文書を作成中",
+            google_drive: "Google Driveを検索中",
         };
         const label = toolNames[data.tool] || `${data.tool}を実行中`;
 

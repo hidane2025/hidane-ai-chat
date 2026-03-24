@@ -6,7 +6,7 @@ Anthropic SDK使用。ツール実行ループ対応。
 import json
 import os
 import re
-from typing import Generator
+from typing import Generator, List, Dict, Optional
 
 import anthropic
 from flask import Response
@@ -40,7 +40,7 @@ def stream_claude_response(
     history: list,
     system_prompt: str,
     on_complete=None,
-    tools: list[dict] | None = None,
+    tools: Optional[List[Dict]] = None,
 ) -> Generator[str, None, None]:
     """Generator that yields SSE strings for a streamed Claude API response.
     ツールが指定されている場合、ツール実行→再ストリーミングのループを行う。

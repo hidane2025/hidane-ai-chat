@@ -9,8 +9,6 @@ from tools.file_reader import TOOL_DEF as FILE_READER_DEF, execute as file_reade
 from tools.web_search import TOOL_DEF as WEB_SEARCH_DEF, execute as web_search_execute
 from tools.document_writer import TOOL_DEF as DOCUMENT_WRITER_DEF, execute as document_writer_execute
 from tools.google_drive import TOOL_DEF as GOOGLE_DRIVE_DEF, execute as google_drive_execute
-from tools.gmail import TOOL_DEF as GMAIL_DEF, execute as gmail_execute
-from tools.google_calendar import TOOL_DEF as GOOGLE_CALENDAR_DEF, execute as google_calendar_execute
 
 # ツール名 → (定義, 実行関数) のマッピング
 _TOOL_REGISTRY = {
@@ -20,15 +18,13 @@ _TOOL_REGISTRY = {
     "web_search": (WEB_SEARCH_DEF, web_search_execute),
     "document_writer": (DOCUMENT_WRITER_DEF, document_writer_execute),
     "google_drive": (GOOGLE_DRIVE_DEF, google_drive_execute),
-    "gmail": (GMAIL_DEF, gmail_execute),
-    "google_calendar": (GOOGLE_CALENDAR_DEF, google_calendar_execute),
 }
 
 # 全ツール定義リスト（Claude API に渡す用）
 ALL_TOOL_DEFINITIONS = [defn for defn, _ in _TOOL_REGISTRY.values()]
 
 
-def get_tool_definitions(tool_names: list[str]) -> list[dict]:
+def get_tool_definitions(tool_names):
     """指定されたツール名のみの定義リストを返す。"""
     return [
         _TOOL_REGISTRY[name][0]

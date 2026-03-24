@@ -4,10 +4,10 @@
 - LINE Bot Webhook: http://localhost:5555/line/webhook
 - 管理画面: http://localhost:5555/admin
 
-認証必須:
+3モードアクセス:
   - 認証済みadmin → 全機能 + ユーザー管理
-  - 認証済みuser → 自社AI社員チャット + 履歴
-  - 未認証 → /auth/login へリダイレクト
+  - 認証済みuser → 自社AI社員チャット + 履歴（社内モード）
+  - 未認証 → 公開デモモード（機密なし）
 """
 
 import os
@@ -15,6 +15,9 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect
 from flask_cors import CORS
@@ -66,7 +69,7 @@ app.register_blueprint(admin_bp)
 def _get_auth_context():
     """認証状態を判定し、(public_mode, company_id, user_id) を返す。
     認証済み → (False, JWT company_id, JWT user_id)
-    未認証   → (True, "public", "guest")  ※API routeは@require_authで保護済み
+    未認証   → (True, "public", "guest")
     """
     token = _extract_token()
     payload = verify_token(token) if token else None
@@ -118,13 +121,10 @@ def auth_logout():
 
 @app.route("/")
 def index():
-    """メインチャットUI（認証必須）
-    認証済み → チャット画面
-    未認証 → /auth/login へリダイレクト
+    """メインチャットUI
+    認証済み → チャット画面（社内モード）
+    未認証 → チャット画面（公開デモモード）
     """
-    token = request.cookies.get("auth_token")
-    if not verify_token(token):
-        return redirect("/auth/login")
     return render_template("chat.html")
 
 
@@ -151,13 +151,11 @@ def api_auth_status():
 
 
 @app.route("/api/employees")
-@require_auth
 def api_employees():
     return jsonify(get_all_employees())
 
 
 @app.route("/api/departments")
-@require_auth
 def api_departments():
     return jsonify(get_departments())
 
@@ -167,10 +165,9 @@ def api_departments():
 # ============================================================
 
 @app.route("/api/chat", methods=["POST"])
-@require_auth
 @rate_limit(max_requests=30, window_seconds=60)
 def api_chat():
-    """チャットAPI（認証必須）"""
+    """チャットAPI（認証済み＝社内モード、未認証＝公開モード）"""
     start_time = time.time()
     data = request.json or {}
     message = data.get("message", "")
@@ -213,10 +210,9 @@ def api_chat():
 
 
 @app.route("/api/chat/stream", methods=["POST"])
-@require_auth
 @rate_limit(max_requests=30, window_seconds=60)
 def api_chat_stream():
-    """SSEストリーミングチャットAPI（認証必須）"""
+    """SSEストリーミングチャットAPI"""
     data = request.json or {}
     message = data.get("message", "")
     target = data.get("employee")
@@ -252,7 +248,6 @@ def api_chat_stream():
 
 
 @app.route("/api/route", methods=["POST"])
-@require_auth
 def api_route():
     data = request.json or {}
     message = data.get("message", "")
@@ -270,7 +265,6 @@ def api_route():
 
 
 @app.route("/api/chat/department", methods=["POST"])
-@require_auth
 @rate_limit(max_requests=30, window_seconds=60)
 def api_chat_department():
     start_time = time.time()
@@ -313,14 +307,12 @@ def api_chat_department():
 
 
 @app.route("/api/history/<channel_id>")
-@require_auth
 def api_history(channel_id):
     history = get_history(channel_id, limit=50)
     return jsonify(history)
 
 
 @app.route("/api/export/<session_id>")
-@require_auth
 def api_export(session_id):
     fmt = request.args.get("format", "json")
     if fmt not in ("json", "csv", "txt"):
@@ -433,7 +425,6 @@ def list_files():
 
 
 @app.route("/api/upload", methods=["POST"])
-@require_auth
 @rate_limit(max_requests=10, window_seconds=60)
 def api_upload():
     from file_handler import validate_file, save_upload
