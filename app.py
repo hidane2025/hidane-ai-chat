@@ -3,6 +3,11 @@
 - Web Chat UI: http://localhost:5555
 - LINE Bot Webhook: http://localhost:5555/line/webhook
 - 管理画面: http://localhost:5555/admin
+
+3モードアクセス:
+  - 認証済みadmin → 全機能 + ユーザー管理
+  - 認証済みuser → 自社AI社員チャット + 履歴（社内モード）
+  - 未認証 → 公開デモモード（機密なし）
 """
 
 import os
@@ -20,13 +25,19 @@ from employees import (
 )
 from knowledge import build_knowledge_context
 from knowledge_admin import build_custom_context
-from database import init_db, save_message, get_history, log_usage, export_conversation, has_consent, record_consent
+from database import (
+    init_db, save_message, get_history, log_usage, export_conversation,
+    has_consent, record_consent, db_list_users,
+)
 from streaming import stream_claude_response, make_sse_response
 from rate_limiter import rate_limit
 from line_handler import handle_line_webhook
 from admin_routes import admin_bp
 from system_prompt import build_system_prompt
-from auth import create_token, authenticate_user, verify_token, require_auth, require_admin, _read_users, _extract_token
+from auth import (
+    create_token, authenticate_user, verify_token, register_user,
+    require_auth, require_admin, _extract_token, _init_users_db,
+)
 
 app = Flask(__name__)
 
@@ -39,21 +50,58 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 
-# DB初期化
+# DB初期化 → ユーザーDB初期化
 init_db()
+_init_users_db()
 
 # 管理画面Blueprint登録
 app.register_blueprint(admin_bp)
 
 
 # ============================================================
-# Auth
+# Auth helpers
 # ============================================================
 
-@app.route("/auth/login", methods=["GET"])
+def _get_auth_context():
+    """認証状態を判定し、(public_mode, company_id, user_id) を返す。
+    認証済み → (False, JWT company_id, JWT user_id)
+    未認証   → (True, "public", "guest")
+    """
+    token = _extract_token()
+    payload = verify_token(token) if token else None
+    if payload:
+        return (False, payload.get("company_id", "hidane"), payload.get("user_id", ""))
+    return (True, "public", "guest")
+
+
+# ============================================================
+# Auth routes
+# ============================================================
+
+@app.route("/auth/login", methods=["GET", "POST"])
 def auth_login():
-    """ログイン無効化 — トップページへリダイレクト"""
-    return redirect("/")
+    """ログインページ / ログイン処理"""
+    if request.method == "GET":
+        # 既にログイン済みならチャットへ
+        token = request.cookies.get("auth_token")
+        if verify_token(token):
+            return redirect("/")
+        return render_template("login.html")
+
+    data = request.form if request.form else (request.json or {})
+    email = data.get("email", "")
+    password = data.get("password", "")
+    token = authenticate_user(email, password)
+    if not token:
+        if request.form:
+            return render_template("login.html", error="メールアドレスまたはパスワードが正しくありません")
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    if request.form:
+        resp = redirect("/")
+        resp.set_cookie("auth_token", token, httponly=True, samesite="Lax", max_age=86400)
+        return resp
+    return jsonify({"token": token})
 
 
 @app.route("/auth/logout")
@@ -67,120 +115,81 @@ def auth_logout():
 # Web Chat UI
 # ============================================================
 
-CONSENT_VERSION = "1.0"
-
-
 @app.route("/")
 def index():
-    """メインチャットUI（ログイン不要・公開）"""
+    """メインチャットUI
+    認証済み → チャット画面（社内モード）
+    未認証 → チャット画面（公開デモモード）
+    """
     return render_template("chat.html")
-
-
-def _user_has_full_consent(user_id: str) -> bool:
-    """Check if user has consented to both terms and privacy policy."""
-    return (
-        has_consent(user_id, "terms", CONSENT_VERSION)
-        and has_consent(user_id, "privacy", CONSENT_VERSION)
-    )
 
 
 @app.route("/terms")
 def terms():
-    """利用規約"""
     return render_template("terms.html")
 
 
 @app.route("/privacy")
 def privacy():
-    """プライバシーポリシー"""
     return render_template("privacy.html")
 
 
-@app.route("/consent")
-def consent_page():
-    """同意画面無効化 — トップページへリダイレクト"""
-    return redirect("/")
-
-
-@app.route("/api/consent/status")
-def api_consent_status():
-    """現在のユーザーの同意状況を返す"""
-    token = _extract_token()
-    payload = verify_token(token) if token else None
-    if not payload:
-        return jsonify({"error": "Authentication required"}), 401
-    user_id = payload.get("user_id", "")
+@app.route("/api/auth/status")
+def api_auth_status():
+    """フロントエンド用：現在の認証状態を返す"""
+    public_mode, company_id, user_id = _get_auth_context()
     return jsonify({
-        "terms": has_consent(user_id, "terms", CONSENT_VERSION),
-        "privacy": has_consent(user_id, "privacy", CONSENT_VERSION),
-        "version": CONSENT_VERSION,
+        "authenticated": not public_mode,
+        "company_id": company_id,
+        "user_id": user_id,
+        "mode": "public" if public_mode else "internal",
     })
-
-
-@app.route("/api/consent/agree", methods=["POST"])
-def api_consent_agree():
-    """ユーザーの同意を記録する"""
-    token = _extract_token()
-    payload = verify_token(token) if token else None
-    if not payload:
-        return jsonify({"error": "Authentication required"}), 401
-    user_id = payload.get("user_id", "")
-    if not has_consent(user_id, "terms", CONSENT_VERSION):
-        record_consent(user_id, "terms", CONSENT_VERSION)
-    if not has_consent(user_id, "privacy", CONSENT_VERSION):
-        record_consent(user_id, "privacy", CONSENT_VERSION)
-    return jsonify({"status": "ok", "user_id": user_id})
-
-
-def _is_public_mode() -> bool:
-    """認証トークンがなければ公開モード（機密情報を出さない）"""
-    token = _extract_token()
-    return verify_token(token) is None
 
 
 @app.route("/api/employees")
 def api_employees():
-    """全AI社員リスト"""
     return jsonify(get_all_employees())
 
+
+@app.route("/api/departments")
+def api_departments():
+    return jsonify(get_departments())
+
+
+# ============================================================
+# Chat API（3モード対応）
+# ============================================================
 
 @app.route("/api/chat", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60)
 def api_chat():
-    """チャットAPI"""
+    """チャットAPI（認証済み＝社内モード、未認証＝公開モード）"""
     start_time = time.time()
     data = request.json or {}
     message = data.get("message", "")
     target = data.get("employee")
     session_id = data.get("session_id", "default")
-    company_id = data.get("company_id", "hidane")
 
     if not message.strip():
         return jsonify({"error": "メッセージを入力してください"}), 400
 
-    # 社員ルーティング
+    public_mode, company_id, user_id = _get_auth_context()
+
     employee_name = target if target and target in EMPLOYEES else route_message(message)
     emp = get_employee(employee_name)
 
-    # 公開モード判定（認証なし＝外部ユーザー＝機密非公開）
-    public_mode = _is_public_mode()
-
-    # API呼び出し
     if ANTHROPIC_API_KEY:
-        # DB履歴を使用（メモリ内ではなくSQLiteから取得）
         history = get_history(session_id, limit=10)
         system = build_system_prompt(emp, employee_name, company_id, public_mode=public_mode)
         response_text = _call_claude_api(message, history, system)
     else:
         response_text = _generate_mock_response(message, emp)
 
-    # DB保存
     save_message(session_id, "user", message, employee_name, emp["id"], company_id)
     save_message(session_id, "assistant", response_text, employee_name, emp["id"], company_id)
 
-    # 利用ログ
     elapsed_ms = int((time.time() - start_time) * 1000)
-    log_usage(session_id, "web", company_id, employee_name, len(message), len(response_text), elapsed_ms)
+    log_usage(session_id, user_id, company_id, employee_name, len(message), len(response_text), elapsed_ms)
 
     return jsonify({
         "employee": employee_name,
@@ -201,19 +210,18 @@ def api_chat_stream():
     message = data.get("message", "")
     target = data.get("employee")
     session_id = data.get("session_id", "default")
-    company_id = data.get("company_id", "hidane")
 
     if not message.strip():
         return jsonify({"error": "メッセージを入力してください"}), 400
 
-    public_mode = _is_public_mode()
+    public_mode, company_id, user_id = _get_auth_context()
+
     employee_name = target if target and target in EMPLOYEES else route_message(message)
     emp = get_employee(employee_name)
     history = get_history(session_id, limit=10)
     system = build_system_prompt(emp, employee_name, company_id, public_mode=public_mode)
 
     def on_complete(full_text):
-        """ストリーム完了時にDB保存"""
         save_message(session_id, "user", message, employee_name, emp["id"], company_id)
         save_message(session_id, "assistant", full_text, employee_name, emp["id"], company_id)
 
@@ -231,7 +239,6 @@ def api_chat_stream():
 
 @app.route("/api/route", methods=["POST"])
 def api_route():
-    """メッセージの振り分け先を確認"""
     data = request.json or {}
     message = data.get("message", "")
     dept = data.get("department")
@@ -247,27 +254,20 @@ def api_route():
     })
 
 
-@app.route("/api/departments")
-def api_departments():
-    """部署グループ一覧"""
-    return jsonify(get_departments())
-
-
 @app.route("/api/chat/department", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60)
 def api_chat_department():
-    """部署グループチャットAPI"""
     start_time = time.time()
     data = request.json or {}
     message = data.get("message", "")
     dept_name = data.get("department", "")
     session_id = data.get("session_id", f"dept_{dept_name}")
-    company_id = data.get("company_id", "hidane")
 
     if dept_name not in DEPARTMENTS:
         return jsonify({"error": "Unknown department"}), 400
 
-    public_mode = _is_public_mode()
+    public_mode, company_id, user_id = _get_auth_context()
+
     responder_name = get_department_responder(dept_name, message)
     emp = get_employee(responder_name)
 
@@ -282,7 +282,7 @@ def api_chat_department():
     save_message(session_id, "assistant", response_text, responder_name, emp["id"], company_id)
 
     elapsed_ms = int((time.time() - start_time) * 1000)
-    log_usage(session_id, "web", company_id, responder_name, len(message), len(response_text), elapsed_ms)
+    log_usage(session_id, user_id, company_id, responder_name, len(message), len(response_text), elapsed_ms)
 
     return jsonify({
         "employee": responder_name,
@@ -298,25 +298,75 @@ def api_chat_department():
 
 @app.route("/api/history/<channel_id>")
 def api_history(channel_id):
-    """チャネル別の会話履歴を取得（DBから）"""
     history = get_history(channel_id, limit=50)
     return jsonify(history)
 
 
 @app.route("/api/export/<session_id>")
 def api_export(session_id):
-    """会話エクスポート"""
     fmt = request.args.get("format", "json")
     if fmt not in ("json", "csv", "txt"):
         return jsonify({"error": "format must be json, csv, or txt"}), 400
-
     content = export_conversation(session_id, fmt)
-    content_type = {
-        "json": "application/json",
-        "csv": "text/csv",
-        "txt": "text/plain",
-    }[fmt]
+    content_type = {"json": "application/json", "csv": "text/csv", "txt": "text/plain"}[fmt]
     return content, 200, {"Content-Type": f"{content_type}; charset=utf-8"}
+
+
+# ============================================================
+# ユーザー管理API（admin専用）
+# ============================================================
+
+@app.route("/admin/api/users", methods=["GET"])
+@require_admin
+def admin_list_users():
+    """ユーザー一覧"""
+    company_id = request.args.get("company_id")
+    users = db_list_users(company_id)
+    return jsonify(users)
+
+
+@app.route("/admin/api/users", methods=["POST"])
+@require_admin
+def admin_create_user():
+    """ユーザー作成"""
+    data = request.json or {}
+    email = data.get("email", "").strip()
+    password = data.get("password", "").strip()
+    company_id = data.get("company_id", "hidane")
+    role = data.get("role", "user")
+    display_name = data.get("display_name", "")
+
+    if not email or not password:
+        return jsonify({"error": "email and password are required"}), 400
+    if role not in ("user", "admin"):
+        return jsonify({"error": "role must be 'user' or 'admin'"}), 400
+
+    result = register_user(email, password, company_id, display_name, role)
+    if result is None:
+        return jsonify({"error": "User already exists"}), 409
+    return jsonify(result), 201
+
+
+@app.route("/admin/api/users/<email>", methods=["PUT"])
+@require_admin
+def admin_update_user(email):
+    """ユーザー更新"""
+    from database import db_update_user
+    data = request.json or {}
+    result = db_update_user(email, **data)
+    if result is None:
+        return jsonify({"error": "User not found or no valid fields"}), 404
+    return jsonify(result)
+
+
+@app.route("/admin/api/users/<email>", methods=["DELETE"])
+@require_admin
+def admin_deactivate_user(email):
+    """ユーザー無効化"""
+    from database import db_deactivate_user
+    if db_deactivate_user(email):
+        return jsonify({"status": "deactivated", "email": email})
+    return jsonify({"error": "User not found"}), 404
 
 
 # ============================================================
@@ -325,32 +375,26 @@ def api_export(session_id):
 
 @app.route("/static/avatars/<path:filename>")
 def serve_avatar(filename):
-    """アバター画像配信"""
     return send_from_directory("static/avatars", filename)
 
 
 @app.route("/api/files/<path:filename>")
 def serve_file(filename):
-    """PDF等ファイル配信"""
     import re
     if ".." in filename or "/" in filename or not re.match(r'^[\w\-. ]+\.pdf$', filename, re.UNICODE):
         return jsonify({"error": "Invalid filename"}), 400
-
     file_dir = Path(__file__).parent / "static" / "files"
     file_path = file_dir / filename
     if not file_path.exists():
         return jsonify({"error": "File not found"}), 404
-
     return send_from_directory(str(file_dir), filename, as_attachment=False)
 
 
 @app.route("/api/files")
 def list_files():
-    """利用可能なファイル一覧"""
     file_dir = Path(__file__).parent / "static" / "files"
     if not file_dir.exists():
         return jsonify([])
-
     return jsonify([
         {"filename": f.name, "size_kb": round(f.stat().st_size / 1024, 1)}
         for f in sorted(file_dir.glob("*.pdf"))
@@ -360,16 +404,13 @@ def list_files():
 @app.route("/api/upload", methods=["POST"])
 @rate_limit(max_requests=10, window_seconds=60)
 def api_upload():
-    """ファイルアップロード（ユーザー→AI社員）"""
     from file_handler import validate_file, save_upload
     if "file" not in request.files:
         return jsonify({"error": "ファイルが見つかりません"}), 400
-
     file = request.files["file"]
     is_valid, error = validate_file(file)
     if not is_valid:
         return jsonify({"error": error}), 400
-
     result = save_upload(file)
     return jsonify(result)
 
@@ -380,7 +421,6 @@ def api_upload():
 
 @app.route("/line/webhook", methods=["POST"])
 def line_webhook():
-    """LINE Bot Webhook受信"""
     return handle_line_webhook(request)
 
 
@@ -389,9 +429,7 @@ def line_webhook():
 # ============================================================
 
 def _call_claude_api(message: str, history: list, system: str) -> str:
-    """Claude APIを使ってAI社員として応答"""
     import urllib.request
-
     messages = [{"role": h["role"], "content": h["content"]} for h in history]
     messages.append({"role": "user", "content": message})
 
@@ -418,7 +456,6 @@ def _call_claude_api(message: str, history: list, system: str) -> str:
 
 
 def _generate_mock_response(message: str, employee: dict) -> str:
-    """APIキー未設定時のデモレスポンス"""
     name = employee["full_name"].split()[-1]
     defaults = {
         "ソウ": f"お疲れ様です。{name}です。\n\n「{message[:30]}」について確認しました。\n\nデモモードで動作中です。",
@@ -436,7 +473,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5555))
     print(f"""
 ╔══════════════════════════════════════════════════╗
-║     🔥 ヒダネ AI社員チャットシステム v2.0       ║
+║     🔥 ヒダネ AI社員チャットシステム v3.0       ║
 ╠══════════════════════════════════════════════════╣
 ║                                                  ║
 ║  Web Chat:  http://localhost:{port}               ║
@@ -444,7 +481,7 @@ if __name__ == "__main__":
 ║  LINE Bot:  http://localhost:{port}/line/webhook   ║
 ║                                                  ║
 ║  API Key: {"✅ 設定済み" if ANTHROPIC_API_KEY else "❌ 未設定（デモモード）"}              ║
-║  DB:      SQLite (data/chat.db)                  ║
+║  Auth:    3モード（admin/user/guest）            ║
 ║                                                  ║
 ╚══════════════════════════════════════════════════╝
 """)

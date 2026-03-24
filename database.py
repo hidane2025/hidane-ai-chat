@@ -111,6 +111,23 @@ CREATE TABLE IF NOT EXISTS user_consents (
     version TEXT NOT NULL DEFAULT '1.0',
     consented_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    company_id TEXT NOT NULL DEFAULT 'hidane',
+    role TEXT NOT NULL DEFAULT 'user',
+    display_name TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email
+    ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_company
+    ON users(company_id);
 """
 
 _POSTGRES_SCHEMA = """
@@ -153,6 +170,23 @@ CREATE TABLE IF NOT EXISTS user_consents (
     version TEXT NOT NULL DEFAULT '1.0',
     consented_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    company_id TEXT NOT NULL DEFAULT 'hidane',
+    role TEXT NOT NULL DEFAULT 'user',
+    display_name TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email
+    ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_company
+    ON users(company_id);
 """
 
 
@@ -454,6 +488,145 @@ def has_consent(user_id: str, consent_type: str = "terms", version: str = "1.0")
     finally:
         conn.close()
     return row is not None
+
+
+# ---------------------------------------------------------------------------
+# User management
+# ---------------------------------------------------------------------------
+
+_USER_COLUMNS = ["id", "email", "password_hash", "company_id", "role",
+                 "display_name", "is_active", "created_at", "updated_at"]
+
+
+def db_create_user(email: str, password_hash: str, company_id: str = "hidane",
+                   role: str = "user", display_name: str = None) -> Optional[Dict]:
+    """Insert a new user. Returns user dict (without password_hash) or None if email exists."""
+    ph = _placeholder()
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        if _use_postgres():
+            cursor.execute(
+                f"""INSERT INTO users (email, password_hash, company_id, role, display_name)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
+                    ON CONFLICT (email) DO NOTHING
+                    RETURNING id, email, company_id, role, display_name, is_active, created_at""",
+                (email, password_hash, company_id, role, display_name),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            conn.commit()
+            cols = ["id", "email", "company_id", "role", "display_name", "is_active", "created_at"]
+            return dict(zip(cols, row))
+        else:
+            try:
+                cursor.execute(
+                    f"""INSERT INTO users (email, password_hash, company_id, role, display_name)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph})""",
+                    (email, password_hash, company_id, role, display_name),
+                )
+                conn.commit()
+                return {
+                    "id": cursor.lastrowid, "email": email, "company_id": company_id,
+                    "role": role, "display_name": display_name, "is_active": True,
+                }
+            except sqlite3.IntegrityError:
+                return None
+    finally:
+        conn.close()
+
+
+def db_get_user_by_email(email: str) -> Optional[Dict]:
+    """Fetch a user by email. Returns full user dict including password_hash, or None."""
+    ph = _placeholder()
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT {', '.join(_USER_COLUMNS)} FROM users WHERE email = {ph}",
+            (email,),
+        )
+        return _fetchone_dict(cursor, _USER_COLUMNS)
+    finally:
+        conn.close()
+
+
+def db_list_users(company_id: str = None) -> List[Dict]:
+    """List users, optionally filtered by company_id. Never includes password_hash."""
+    safe_cols = [c for c in _USER_COLUMNS if c != "password_hash"]
+    ph = _placeholder()
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        if company_id:
+            cursor.execute(
+                f"SELECT {', '.join(safe_cols)} FROM users WHERE company_id = {ph} ORDER BY created_at",
+                (company_id,),
+            )
+        else:
+            cursor.execute(f"SELECT {', '.join(safe_cols)} FROM users ORDER BY created_at")
+        return _fetchall_dicts(cursor, safe_cols)
+    finally:
+        conn.close()
+
+
+def db_update_user(email: str, **fields) -> Optional[Dict]:
+    """Update user fields. Only allows: role, display_name, is_active, password_hash.
+    Returns updated user dict (without password_hash) or None if not found."""
+    allowed = {"role", "display_name", "is_active", "password_hash"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return None
+    ph = _placeholder()
+    set_clause = ", ".join(f"{k} = {ph}" for k in updates)
+    values = list(updates.values()) + [email]
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE users SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE email = {ph}",
+            values,
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            return None
+    finally:
+        conn.close()
+    # Return updated user (without password_hash)
+    user = db_get_user_by_email(email)
+    if user:
+        return {k: v for k, v in user.items() if k != "password_hash"}
+    return None
+
+
+def db_deactivate_user(email: str) -> bool:
+    """Soft-delete a user by setting is_active=False. Returns True if found."""
+    result = db_update_user(email, is_active=False)
+    return result is not None
+
+
+def db_migrate_from_json(json_path: str) -> int:
+    """Migrate users from a users.json file into the database. Returns count migrated."""
+    import json as _json
+    path = Path(json_path)
+    if not path.exists():
+        return 0
+    with open(path, "r", encoding="utf-8") as f:
+        users = _json.load(f)
+    count = 0
+    for email, data in users.items():
+        existing = db_get_user_by_email(email)
+        if existing is None:
+            db_create_user(
+                email=email,
+                password_hash=data["password_hash"],
+                company_id=data.get("company_id", "hidane"),
+                role=data.get("role", "user"),
+                display_name=data.get("display_name"),
+            )
+            count += 1
+    return count
 
 
 def cleanup_old(days: int = 90) -> int:

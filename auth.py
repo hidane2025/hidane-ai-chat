@@ -1,6 +1,9 @@
-"""JWT authentication module for Hidane AI chat system."""
+"""JWT authentication module for Hidane AI chat system.
 
-import json
+Uses database-backed user storage (PostgreSQL/SQLite).
+Falls back to users.json migration on first run.
+"""
+
 import os
 import time
 from datetime import datetime, timezone
@@ -11,43 +14,20 @@ import bcrypt
 import jwt
 from flask import request, jsonify
 
+from database import (
+    db_get_user_by_email, db_create_user, db_migrate_from_json,
+)
+
 JWT_SECRET = os.environ.get("JWT_SECRET", "hidane-dev-secret-do-not-use-in-prod")
 TOKEN_EXPIRY_SECONDS = 86400  # 24 hours
-USERS_FILE = Path(__file__).parent / "users.json"
+USERS_JSON_PATH = Path(__file__).parent / "users.json"
 
 
-def _read_users():
-    """Read users from JSON file. Returns a dict."""
-    if not USERS_FILE.exists():
-        return {}
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+# ---------------------------------------------------------------------------
+# Token helpers
+# ---------------------------------------------------------------------------
 
-
-def _write_users(users):
-    """Write users dict to JSON file."""
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
-
-
-def _init_default_admin():
-    """Create users.json with default admin if it doesn't exist."""
-    if USERS_FILE.exists():
-        return
-    hashed = bcrypt.hashpw("hidane2026".encode("utf-8"), bcrypt.gensalt())
-    users = {
-        "admin@hidane.co.jp": {
-            "password_hash": hashed.decode("utf-8"),
-            "company_id": "hidane",
-            "role": "admin",
-            "display_name": "Admin",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-    }
-    _write_users(users)
-
-
-def create_token(user_id, company_id, role="user"):
+def create_token(user_id: str, company_id: str, role: str = "user") -> str:
     """Create a JWT token. Returns a token string."""
     now = int(time.time())
     payload = {
@@ -60,21 +40,27 @@ def create_token(user_id, company_id, role="user"):
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
-def verify_token(token):
+def verify_token(token: str) -> dict | None:
     """Verify and decode a JWT token. Returns payload dict or None."""
+    if not token:
+        return None
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
 
 
-def _extract_token():
+def _extract_token() -> str | None:
     """Extract token from Authorization header or cookie. Returns str or None."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         return auth_header[7:]
     return request.cookies.get("auth_token")
 
+
+# ---------------------------------------------------------------------------
+# Flask decorators
+# ---------------------------------------------------------------------------
 
 def require_auth(f):
     """Flask decorator that requires valid JWT authentication."""
@@ -102,11 +88,16 @@ def require_admin(f):
     return decorated
 
 
-def authenticate_user(email, password):
+# ---------------------------------------------------------------------------
+# User authentication (DB-backed)
+# ---------------------------------------------------------------------------
+
+def authenticate_user(email: str, password: str) -> str | None:
     """Authenticate user by email and password. Returns token string or None."""
-    users = _read_users()
-    user = users.get(email)
+    user = db_get_user_by_email(email)
     if user is None:
+        return None
+    if not user.get("is_active", True):
         return None
     if not bcrypt.checkpw(password.encode("utf-8"), user["password_hash"].encode("utf-8")):
         return None
@@ -117,30 +108,44 @@ def authenticate_user(email, password):
     )
 
 
-def register_user(email, password, company_id, display_name):
-    """Register a new user. Returns new user dict (without password) or None if exists."""
-    users = _read_users()
-    if email in users:
-        return None
+def register_user(email: str, password: str, company_id: str,
+                   display_name: str = None, role: str = "user") -> dict | None:
+    """Register a new user. Returns user dict (without password) or None if exists."""
     hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
-    new_user = {
-        "password_hash": hashed.decode("utf-8"),
-        "company_id": company_id,
-        "role": "user",
-        "display_name": display_name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    # Immutable: create new dict instead of mutating
-    updated_users = {**users, email: new_user}
-    _write_users(updated_users)
-    # Return user info without password hash
-    return {
-        "email": email,
-        "company_id": company_id,
-        "role": "user",
-        "display_name": display_name,
-    }
+    return db_create_user(
+        email=email,
+        password_hash=hashed.decode("utf-8"),
+        company_id=company_id,
+        role=role,
+        display_name=display_name,
+    )
 
 
-# Initialize default admin on import
-_init_default_admin()
+# ---------------------------------------------------------------------------
+# Initialization: migrate users.json → DB on first run
+# ---------------------------------------------------------------------------
+
+def _init_users_db():
+    """Ensure at least the default admin exists in the database."""
+    # Migrate from users.json if it exists
+    if USERS_JSON_PATH.exists():
+        migrated = db_migrate_from_json(str(USERS_JSON_PATH))
+        if migrated > 0:
+            print(f"[auth] Migrated {migrated} users from users.json to database")
+
+    # Ensure default admin exists
+    admin = db_get_user_by_email("admin@hidane.co.jp")
+    if admin is None:
+        hashed = bcrypt.hashpw("hidane2026".encode("utf-8"), bcrypt.gensalt())
+        db_create_user(
+            email="admin@hidane.co.jp",
+            password_hash=hashed.decode("utf-8"),
+            company_id="hidane",
+            role="admin",
+            display_name="Admin",
+        )
+        print("[auth] Default admin created: admin@hidane.co.jp")
+
+
+# Run on import (after database.init_db() has been called from app.py)
+# Defer to avoid circular import — called explicitly from app.py
