@@ -103,7 +103,7 @@ def stream_claude_response(
                     token = _extract_text_delta(value)
                     if token:
                         full_text += token
-                        yield _sse_event({"type": "token", "text": token})
+                        yield _sse_event({"type": "token", "token": token})
 
         # Notify caller to persist to DB
         if on_complete:
