@@ -38,6 +38,7 @@ from auth import (
     create_token, authenticate_user, verify_token, register_user,
     require_auth, require_admin, _extract_token, _init_users_db,
 )
+from tools import get_tool_definitions
 
 app = Flask(__name__)
 
@@ -179,9 +180,12 @@ def api_chat():
     emp = get_employee(employee_name)
 
     if ANTHROPIC_API_KEY:
+        from claude_client import call_claude_with_tools
         history = get_history(session_id, limit=10)
         system = build_system_prompt(emp, employee_name, company_id, public_mode=public_mode)
-        response_text = _call_claude_api(message, history, system)
+        # 認証済みユーザーのみツール使用可能
+        emp_tools = get_tool_definitions(emp.get("tools", [])) if not public_mode else None
+        response_text = call_claude_with_tools(message, history, system, tools=emp_tools)
     else:
         response_text = _generate_mock_response(message, emp)
 
@@ -220,6 +224,8 @@ def api_chat_stream():
     emp = get_employee(employee_name)
     history = get_history(session_id, limit=10)
     system = build_system_prompt(emp, employee_name, company_id, public_mode=public_mode)
+    # 認証済みユーザーのみツール使用可能
+    emp_tools = get_tool_definitions(emp.get("tools", [])) if not public_mode else None
 
     def on_complete(full_text):
         save_message(session_id, "user", message, employee_name, emp["id"], company_id)
@@ -233,6 +239,7 @@ def api_chat_stream():
         history=history,
         system_prompt=system,
         on_complete=on_complete,
+        tools=emp_tools,
     )
     return make_sse_response(generator)
 
@@ -376,6 +383,19 @@ def admin_deactivate_user(email):
 @app.route("/static/avatars/<path:filename>")
 def serve_avatar(filename):
     return send_from_directory("static/avatars", filename)
+
+
+@app.route("/api/generated/<path:filename>")
+def serve_generated(filename):
+    """AI社員が生成した文書の配信"""
+    import re
+    if ".." in filename or "/" in filename:
+        return jsonify({"error": "Invalid filename"}), 400
+    gen_dir = Path(__file__).parent / "static" / "generated"
+    file_path = gen_dir / filename
+    if not file_path.exists():
+        return jsonify({"error": "File not found"}), 404
+    return send_from_directory(str(gen_dir), filename, as_attachment=True)
 
 
 @app.route("/api/files/<path:filename>")

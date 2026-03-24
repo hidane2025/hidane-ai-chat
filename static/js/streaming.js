@@ -191,6 +191,21 @@ class ChatStream {
                     });
                     break;
 
+                case "tool_start":
+                    this._emit("stream-tool-start", {
+                        tool: payload.tool || "",
+                        tool_use_id: payload.tool_use_id || "",
+                    });
+                    break;
+
+                case "tool_result":
+                    this._emit("stream-tool-result", {
+                        tool: payload.tool || "",
+                        tool_use_id: payload.tool_use_id || "",
+                        summary: payload.summary || "",
+                    });
+                    break;
+
                 case "error":
                     this._emit("stream-error", {
                         error: payload.message || "サーバーエラー",

@@ -183,6 +183,39 @@ function injectStreamingStyles() {
         .suggestions-area {
             padding: 4px 16px 8px;
         }
+        .tool-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            margin: 6px 0;
+            background: rgba(108, 92, 231, 0.1);
+            border-radius: 6px;
+            font-size: 12px;
+            color: #a29bfe;
+            border-left: 2px solid #6C5CE7;
+        }
+        .tool-indicator.tool-done {
+            background: rgba(0, 184, 148, 0.1);
+            color: #00b894;
+            border-left-color: #00b894;
+        }
+        .tool-spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid rgba(108, 92, 231, 0.3);
+            border-top-color: #6C5CE7;
+            border-radius: 50%;
+            animation: tool-spin 0.6s linear infinite;
+        }
+        .tool-done-icon::before {
+            content: "\\2713";
+            font-weight: bold;
+        }
+        @keyframes tool-spin {
+            to { transform: rotate(360deg); }
+        }
     `;
     document.head.appendChild(style);
 }
@@ -530,6 +563,51 @@ function sendViaStreaming(text, channelId, ch, typingEl) {
                 bubbleContent.classList.add("streaming");
             }
             scrollToBottom();
+        }
+    });
+
+    stream.on("stream-tool-start", (data) => {
+        // ツール実行開始の表示
+        const toolNames = {
+            knowledge_search: "ナレッジを検索中",
+            calculator: "計算中",
+            file_reader: "ファイルを確認中",
+            web_search: "Webを検索中",
+            document_writer: "文書を作成中",
+        };
+        const label = toolNames[data.tool] || `${data.tool}を実行中`;
+
+        if (!streamBubble) {
+            typingEl.remove();
+            streamMeta = {
+                employee: streamMeta.employee || "ソウ",
+                employee_color: streamMeta.employee_color || "#6C5CE7",
+                avatar: streamMeta.avatar || "桐生ソウ_アバター.png",
+                employee_role: streamMeta.employee_role || "",
+            };
+            streamBubble = createStreamBubble(streamMeta);
+            dom.messages.appendChild(streamBubble);
+        }
+
+        const bubbleContent = streamBubble.querySelector(".msg-bubble");
+        if (bubbleContent) {
+            const indicator = document.createElement("div");
+            indicator.className = "tool-indicator";
+            indicator.id = `tool-${data.tool_use_id}`;
+            indicator.innerHTML = `<span class="tool-spinner"></span> ${label}...`;
+            bubbleContent.appendChild(indicator);
+            scrollToBottom();
+        }
+    });
+
+    stream.on("stream-tool-result", (data) => {
+        // ツール完了表示の更新
+        if (streamBubble) {
+            const indicator = streamBubble.querySelector(`#tool-${data.tool_use_id}`);
+            if (indicator) {
+                indicator.innerHTML = `<span class="tool-done-icon"></span> ${data.tool} 完了`;
+                indicator.classList.add("tool-done");
+            }
         }
     });
 
