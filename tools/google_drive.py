@@ -120,7 +120,6 @@ def _search_files(query: str, max_results: int = 10) -> str:
                 q=q_string,
                 pageSize=min(max_results, 20),
                 fields="files(id, name, mimeType, modifiedTime, parents, size, webViewLink)",
-                orderBy="relevance",
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,
             )
