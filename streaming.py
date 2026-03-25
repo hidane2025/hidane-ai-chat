@@ -80,6 +80,7 @@ def stream_claude_response(
             }
             if tools:
                 api_kwargs["tools"] = tools
+                print(f"[streaming] ツール数: {len(tools)}, ツール名: {[t['name'] for t in tools]}")
 
             # ストリーミングレスポンスを処理
             round_text = ""
@@ -146,7 +147,9 @@ def stream_claude_response(
             # ツール実行
             tool_results = []
             for tc_id, tc_name, tc_input in tool_calls:
+                print(f"[streaming] ツール実行: {tc_name} input={tc_input}")
                 result = execute_tool(tc_name, tc_input)
+                print(f"[streaming] ツール結果: {tc_name} -> {result[:200]}")
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tc_id,
