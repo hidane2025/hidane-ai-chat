@@ -9,13 +9,51 @@ from knowledge_admin import build_custom_context
 
 
 TOOL_DESCRIPTIONS = {
-    "google_drive": "Google Driveのファイル検索・閲覧・フォルダ名変更・移動・作成。「Googleドライブ」「フォルダ名変更」等のリクエストにはこのツールを使うこと。",
+    "google_drive": (
+        "Google Driveのファイル検索・閲覧・フォルダ名変更・移動・作成・ファイル作成。"
+        "「Googleドライブ」「フォルダ名変更」等のリクエストにはこのツールを使うこと。"
+        "create_fileアクションでタスクキューにタスクを投入できる。"
+    ),
     "knowledge_search": "社内ナレッジ検索",
     "file_reader": "ファイル読み取り",
     "document_writer": "文書作成",
     "web_search": "Web検索",
     "calculator": "計算",
 }
+
+# Claude Codeスキルでしか実行できないタスクのリスト
+CLAUDE_CODE_SKILLS = {
+    "sales-pipeline": {"keywords": ["営業準備", "リサーチ", "提案書", "商談準備", "営業パイプライン"], "description": "企業リサーチ→提案書→スライド→商談台本の一括生成"},
+    "teleapo-list": {"keywords": ["テレアポ", "リスト", "架電", "スコアリング"], "description": "テレアポリスト作成・最適化"},
+    "training-report": {"keywords": ["研修報告", "報告書", "アンケート分析"], "description": "研修実施報告書の自動生成"},
+    "weekly-kpi": {"keywords": ["KPI", "PL", "売上レポート", "月次"], "description": "週次KPIレポート・月次PL自動生成"},
+    "curriculum": {"keywords": ["カリキュラム", "研修コース", "動画台本"], "description": "研修カリキュラム設計"},
+    "followup-email": {"keywords": ["フォローメール", "商談後メール"], "description": "商談後フォローメール生成"},
+}
+
+TASK_QUEUE_INSTRUCTIONS = """
+【タスクキュー機能】
+以下のタスクはClaude Code（ローカル環境）でしか実行できません。
+依頼を受けたら、google_driveツールのcreate_fileアクションでタスクファイルを作成してください。
+
+対象スキル:
+- sales-pipeline: 営業準備（リサーチ→提案書→スライド）
+- teleapo-list: テレアポリスト作成
+- training-report: 研修報告書生成
+- weekly-kpi: KPIレポート生成
+- curriculum: 研修カリキュラム設計
+- followup-email: フォローメール生成
+
+タスク投入方法:
+1. google_driveツールでタスクキュー/pending/フォルダのIDを確認（listアクション）
+2. create_fileアクションで以下のJSON形式のファイルを作成:
+   ファイル名: task_YYYYMMDD_HHMM.json
+   内容: {"skill": "スキル名", "target": "対象企業名等", "instructions": "具体的な指示", "status": "pending"}
+3. 「タスクを投入しました。Claude Codeが自動で処理します。完了したらGoogle Driveの商談先フォルダに成果物が保存されます」と報告
+
+タスク状況確認:
+- 「タスクの状況は？」と聞かれたらタスクキュー/done/フォルダを確認
+"""
 
 
 def build_system_prompt(employee: dict, employee_name: str, company_id: str = "hidane", public_mode: bool = False) -> str:
@@ -81,6 +119,11 @@ def build_system_prompt(employee: dict, employee_name: str, company_id: str = "h
             "- Google Driveのフォルダ名変更・ファイル検索などはgoogle_driveツールで実行可能"
         )
 
+    # google_driveツールがある場合、タスクキュー指示を追加
+    task_queue_section = ""
+    if "google_drive" in emp_tool_names:
+        task_queue_section = TASK_QUEUE_INSTRUCTIONS
+
     return (
         f"{employee['system_prompt']}\n\n"
         "【重要：あなたの立場】\n"
@@ -106,4 +149,5 @@ def build_system_prompt(employee: dict, employee_name: str, company_id: str = "h
         "ない場合は「その分析結果は私の手元にはまだ共有されていません。"
         "内容を教えていただければ対応します」と正直に答えてください。"
         f"{tool_section}"
+        f"{task_queue_section}"
     )

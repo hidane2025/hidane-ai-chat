@@ -22,11 +22,12 @@ TOOL_DEF = {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["search", "read", "list", "rename", "move", "create_folder"],
+                "enum": ["search", "read", "list", "rename", "move", "create_folder", "create_file"],
                 "description": (
                     "実行するアクション。"
                     "search=キーワード検索、read=ファイル読み取り、list=フォルダ内一覧、"
-                    "rename=名前変更、move=移動、create_folder=フォルダ作成"
+                    "rename=名前変更、move=移動、create_folder=フォルダ作成、"
+                    "create_file=テキストファイル作成（タスクキュー投入等）"
                 ),
             },
             "query": {
@@ -48,6 +49,10 @@ TOOL_DEF = {
             "destination_folder_id": {
                 "type": "string",
                 "description": "移動先フォルダのID（action=moveの場合）",
+            },
+            "content": {
+                "type": "string",
+                "description": "ファイルの内容（action=create_fileの場合）。テキストまたはJSON文字列。",
             },
             "max_results": {
                 "type": "integer",
@@ -392,6 +397,35 @@ def _create_folder(name: str, parent_folder_id: Optional[str] = None) -> str:
         return f"フォルダ作成エラー: {str(e)}"
 
 
+def _create_file(name: str, content: str, parent_folder_id: Optional[str] = None) -> str:
+    """テキストファイルを作成してGoogle Driveにアップロードする。"""
+    service = _get_drive_service()
+    if service is None:
+        return _fallback_message("create_file")
+
+    try:
+        from googleapiclient.http import MediaInMemoryUpload
+
+        body = {"name": name, "mimeType": "text/plain"}
+        if parent_folder_id:
+            body["parents"] = [parent_folder_id]
+
+        media = MediaInMemoryUpload(
+            content.encode("utf-8"), mimetype="text/plain", resumable=False
+        )
+        created = (
+            service.files()
+            .create(body=body, media_body=media, fields="id, name, webViewLink")
+            .execute()
+        )
+        return (
+            f"ファイル「{created['name']}」を作成しました。\n"
+            f"ID: {created['id']}"
+        )
+    except Exception as e:
+        return f"ファイル作成エラー: {str(e)}"
+
+
 def _fallback_message(action: str) -> str:
     """サービスアカウント未設定時のメッセージ。"""
     return (
@@ -442,4 +476,14 @@ def execute(params: dict) -> str:
         parent = params.get("folder_id")
         return _create_folder(new_name, parent)
 
-    return f"不明なアクション: {action}。search / read / list / rename / move / create_folder のいずれかを指定してください。"
+    if action == "create_file":
+        new_name = params.get("new_name", "")
+        content = params.get("content", "")
+        if not new_name:
+            return "new_name（ファイル名）を指定してください。"
+        if not content:
+            return "content（ファイル内容）を指定してください。"
+        parent = params.get("folder_id")
+        return _create_file(new_name, content, parent)
+
+    return f"不明なアクション: {action}。search / read / list / rename / move / create_folder / create_file のいずれかを指定してください。"
