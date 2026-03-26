@@ -191,8 +191,8 @@ def api_chat():
         from claude_client import call_claude_with_tools
         history = get_history(session_id, limit=10)
         system = build_system_prompt(emp, employee_name, company_id, public_mode=public_mode)
-        # 認証済みユーザーのみツール使用可能
-        emp_tools = get_tool_definitions(emp.get("tools", [])) if not public_mode else None
+        # @require_auth通過済み = 認証済み → ツール常に有効
+        emp_tools = get_tool_definitions(emp.get("tools", []))
         response_text = call_claude_with_tools(message, history, system, tools=emp_tools)
     else:
         response_text = _generate_mock_response(message, emp)
@@ -232,10 +232,8 @@ def api_chat_stream():
     emp = get_employee(employee_name)
     history = get_history(session_id, limit=10)
     system = build_system_prompt(emp, employee_name, company_id, public_mode=public_mode)
-    # 認証済みユーザーのみツール使用可能
-    emp_tools = get_tool_definitions(emp.get("tools", [])) if not public_mode else None
-    import sys
-    print(f"[api_chat_stream] employee={employee_name}, public_mode={public_mode}, tools_count={len(emp_tools) if emp_tools else 0}, tool_names={[t['name'] for t in emp_tools] if emp_tools else 'None'}", flush=True, file=sys.stderr)
+    # @require_auth通過済み = 認証済み → ツール常に有効
+    emp_tools = get_tool_definitions(emp.get("tools", []))
 
     def on_complete(full_text):
         save_message(session_id, "user", message, employee_name, emp["id"], company_id)
