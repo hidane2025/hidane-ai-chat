@@ -71,6 +71,11 @@ def _get_auth_context():
     認証済み → (False, JWT company_id, JWT user_id)
     未認証   → (True, "public", "guest")
     """
+    # @require_auth通過後はrequest.userにペイロードがセットされている
+    payload = getattr(request, "user", None)
+    if payload:
+        return (False, payload.get("company_id", "hidane"), payload.get("user_id", ""))
+    # フォールバック：トークンを直接検証
     token = _extract_token()
     payload = verify_token(token) if token else None
     if payload:
