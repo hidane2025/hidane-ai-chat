@@ -229,6 +229,8 @@ def api_chat_stream():
     system = build_system_prompt(emp, employee_name, company_id, public_mode=public_mode)
     # 認証済みユーザーのみツール使用可能
     emp_tools = get_tool_definitions(emp.get("tools", [])) if not public_mode else None
+    import sys
+    print(f"[api_chat_stream] employee={employee_name}, public_mode={public_mode}, tools_count={len(emp_tools) if emp_tools else 0}, tool_names={[t['name'] for t in emp_tools] if emp_tools else 'None'}", flush=True, file=sys.stderr)
 
     def on_complete(full_text):
         save_message(session_id, "user", message, employee_name, emp["id"], company_id)
@@ -445,6 +447,34 @@ def api_upload():
 @app.route("/line/webhook", methods=["POST"])
 def line_webhook():
     return handle_line_webhook(request)
+
+
+# ============================================================
+# デバッグ：Google Drive接続テスト
+# ============================================================
+
+@app.route("/api/debug/drive-test")
+@require_admin
+def debug_drive_test():
+    """Google Drive接続テスト（admin専用）"""
+    from tools.google_drive import execute as drive_execute
+    # ルートフォルダの一覧を取得
+    result = drive_execute({"action": "list"})
+    return jsonify({"status": "ok", "result": result})
+
+
+@app.route("/api/debug/tool-check")
+@require_admin
+def debug_tool_check():
+    """ソウに渡されるツール定義を確認（admin専用）"""
+    emp = get_employee("ソウ")
+    emp_tools = get_tool_definitions(emp.get("tools", []))
+    return jsonify({
+        "employee": "ソウ",
+        "tool_names_in_config": emp.get("tools", []),
+        "tool_definitions_count": len(emp_tools),
+        "tool_names_resolved": [t["name"] for t in emp_tools],
+    })
 
 
 # ============================================================
