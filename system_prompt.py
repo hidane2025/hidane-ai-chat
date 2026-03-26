@@ -51,6 +51,29 @@ def build_system_prompt(employee: dict, employee_name: str, company_id: str = "h
 
     custom_section = f"\n\n{custom_context}" if custom_context else ""
 
+    # ツール活用指示（社員のtools定義から動的生成）
+    tool_descriptions = {
+        "google_drive": "google_driveツール：Google Drive内のファイル検索(search)・読み取り(read)・フォルダ一覧(list)・フォルダ作成(create_folder)・ファイル移動(move)・名前変更(rename)・コピー(copy)・削除(delete)が可能",
+        "gmail": "gmailツール：メール送信・下書き作成が可能",
+        "google_calendar": "google_calendarツール：スケジュール確認・予定作成が可能",
+        "web_search": "web_searchツール：最新情報のWeb検索が可能",
+        "calculator": "calculatorツール：数値計算が可能",
+        "document_writer": "document_writerツール：文書生成が可能",
+        "knowledge_search": "knowledge_searchツール：社内ナレッジ検索が可能",
+        "file_reader": "file_readerツール：アップロードファイルの読み取りが可能",
+    }
+    emp_tools = employee.get("tools", [])
+    if emp_tools:
+        tool_lines = [tool_descriptions[t] for t in emp_tools if t in tool_descriptions]
+        tool_section = (
+            "\n\n【あなたが使えるツール】\n"
+            + "\n".join(f"- {line}" for line in tool_lines)
+            + "\n\n重要：ツールで実行可能な操作を依頼された場合、必ずツールを使って実行してください。"
+            "「できません」「権限がありません」とは絶対に言わないでください。ツールを呼び出せば実行できます。\n"
+        )
+    else:
+        tool_section = ""
+
     return (
         f"{employee['system_prompt']}\n\n"
         "【重要：あなたの立場】\n"
@@ -75,4 +98,5 @@ def build_system_prompt(employee: dict, employee_name: str, company_id: str = "h
         "上記データに該当する情報があればそれを使って回答し、\n"
         "ない場合は「その分析結果は私の手元にはまだ共有されていません。"
         "内容を教えていただければ対応します」と正直に答えてください。"
+        f"{tool_section}"
     )
