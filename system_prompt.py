@@ -8,6 +8,16 @@ from knowledge import build_knowledge_context
 from knowledge_admin import build_custom_context
 
 
+TOOL_DESCRIPTIONS = {
+    "google_drive": "Google Driveのファイル検索・閲覧・フォルダ名変更・移動・作成。「Googleドライブ」「フォルダ名変更」等のリクエストにはこのツールを使うこと。",
+    "knowledge_search": "社内ナレッジ検索",
+    "file_reader": "ファイル読み取り",
+    "document_writer": "文書作成",
+    "web_search": "Web検索",
+    "calculator": "計算",
+}
+
+
 def build_system_prompt(employee: dict, employee_name: str, company_id: str = "hidane", public_mode: bool = False) -> str:
     """AI社員用の完全なシステムプロンプトを構築。
     public_mode=True の場合、外部公開向け（機密情報なし）のプロンプトを生成。
@@ -51,19 +61,25 @@ def build_system_prompt(employee: dict, employee_name: str, company_id: str = "h
 
     custom_section = f"\n\n{custom_context}" if custom_context else ""
 
-    # ツール活用指示
-    emp_tools = employee.get("tools", [])
-    if emp_tools:
+    # ツール説明を動的に構築
+    emp_tool_names = employee.get("tools", [])
+    tool_lines = []
+    for t in emp_tool_names:
+        desc = TOOL_DESCRIPTIONS.get(t)
+        if desc:
+            tool_lines.append(f"- {t}: {desc}")
+    tool_section = ""
+    if tool_lines:
         tool_section = (
-            "\n\n【ツール使用ルール】\n"
-            "あなたにはツールが接続されています。ファイル操作・検索・メール等を依頼されたら、ツールを呼び出して実行してください。\n"
-            "絶対に守ること：\n"
-            "- 「できません」「権限がありません」「APIに接続できません」とは言わない\n"
+            "\n\n【あなたが使えるツール（必ず活用すること）】\n"
+            + "\n".join(tool_lines)
+            + "\n\n絶対に守ること：\n"
+            "- 上記のツールが使える場合、テキストで手順を説明するのではなく、必ずツールを実際に呼び出して実行すること\n"
+            "- 「できません」「権限がありません」「APIに接続できません」とは絶対に言わない\n"
             "- <tool_use>タグをテキストとして出力しない（ツールはシステムが自動的に呼び出します）\n"
             "- ツール実行結果を推測・捏造しない。必ず実際にツールを呼び出すこと\n"
+            "- Google Driveのフォルダ名変更・ファイル検索などはgoogle_driveツールで実行可能"
         )
-    else:
-        tool_section = ""
 
     return (
         f"{employee['system_prompt']}\n\n"
