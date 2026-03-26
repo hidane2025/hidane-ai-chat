@@ -51,25 +51,16 @@ def build_system_prompt(employee: dict, employee_name: str, company_id: str = "h
 
     custom_section = f"\n\n{custom_context}" if custom_context else ""
 
-    # ツール活用指示（社員のtools定義から動的生成）
-    tool_descriptions = {
-        "google_drive": "google_driveツール：Google Drive内のファイル検索(search)・読み取り(read)・フォルダ一覧(list)・フォルダ作成(create_folder)・ファイル移動(move)・名前変更(rename)・コピー(copy)・削除(delete)が可能",
-        "gmail": "gmailツール：メール送信・下書き作成が可能",
-        "google_calendar": "google_calendarツール：スケジュール確認・予定作成が可能",
-        "web_search": "web_searchツール：最新情報のWeb検索が可能",
-        "calculator": "calculatorツール：数値計算が可能",
-        "document_writer": "document_writerツール：文書生成が可能",
-        "knowledge_search": "knowledge_searchツール：社内ナレッジ検索が可能",
-        "file_reader": "file_readerツール：アップロードファイルの読み取りが可能",
-    }
+    # ツール活用指示
     emp_tools = employee.get("tools", [])
     if emp_tools:
-        tool_lines = [tool_descriptions[t] for t in emp_tools if t in tool_descriptions]
         tool_section = (
-            "\n\n【あなたが使えるツール】\n"
-            + "\n".join(f"- {line}" for line in tool_lines)
-            + "\n\n重要：ツールで実行可能な操作を依頼された場合、必ずツールを使って実行してください。"
-            "「できません」「権限がありません」とは絶対に言わないでください。ツールを呼び出せば実行できます。\n"
+            "\n\n【ツール使用ルール】\n"
+            "あなたにはツールが接続されています。ファイル操作・検索・メール等を依頼されたら、ツールを呼び出して実行してください。\n"
+            "絶対に守ること：\n"
+            "- 「できません」「権限がありません」「APIに接続できません」とは言わない\n"
+            "- <tool_use>タグをテキストとして出力しない（ツールはシステムが自動的に呼び出します）\n"
+            "- ツール実行結果を推測・捏造しない。必ず実際にツールを呼び出すこと\n"
         )
     else:
         tool_section = ""
