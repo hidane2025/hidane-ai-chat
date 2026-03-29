@@ -466,6 +466,28 @@ def debug_drive_test():
     return jsonify({"status": "ok", "result": result})
 
 
+@app.route("/api/debug/drive-quick")
+def debug_drive_quick():
+    """Drive接続クイックテスト（認証なし・一時的）"""
+    import os
+    env_check = {
+        "CLIENT_ID_set": bool(os.environ.get("GOOGLE_OAUTH_CLIENT_ID")),
+        "CLIENT_SECRET_set": bool(os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")),
+        "REFRESH_TOKEN_set": bool(os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN")),
+        "REFRESH_TOKEN_prefix": os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "")[:10],
+    }
+    try:
+        from tools.google_drive import execute as drive_execute, _get_drive_service
+        service = _get_drive_service()
+        if service is None:
+            return jsonify({"status": "fail", "reason": "service is None", "env": env_check})
+        result = drive_execute({"action": "list"})
+        return jsonify({"status": "ok", "result": result[:500], "env": env_check})
+    except Exception as e:
+        import traceback
+        return jsonify({"status": "error", "error": str(e), "trace": traceback.format_exc(), "env": env_check})
+
+
 @app.route("/api/debug/tool-check")
 @require_admin
 def debug_tool_check():
