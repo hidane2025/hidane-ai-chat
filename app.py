@@ -58,32 +58,6 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
 init_db()
 _init_users_db()
 
-# タスクキュー自動処理（APScheduler）
-def _init_task_scheduler():
-    """バックグラウンドでタスクキューを5分おきに巡回するスケジューラを起動。"""
-    try:
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from task_processor import process_pending_tasks
-
-        scheduler = BackgroundScheduler(daemon=True)
-        scheduler.add_job(
-            process_pending_tasks,
-            "interval",
-            minutes=5,
-            id="task_queue_processor",
-            replace_existing=True,
-        )
-        scheduler.start()
-        print("[scheduler] タスクキュー巡回ジョブを開始（5分間隔）", flush=True)
-    except ImportError:
-        print("[scheduler] APScheduler未インストール。タスク自動処理は無効。", flush=True)
-    except Exception as e:
-        print(f"[scheduler] 起動エラー: {e}", flush=True)
-
-# gunicorn worker重複防止: 環境変数でメインプロセスのみ実行
-if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not os.environ.get("WERKZEUG_RUN_MAIN"):
-    _init_task_scheduler()
-
 # 管理画面Blueprint登録
 app.register_blueprint(admin_bp)
 

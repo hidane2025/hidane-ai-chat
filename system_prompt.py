@@ -8,54 +8,6 @@ from knowledge import build_knowledge_context
 from knowledge_admin import build_custom_context
 
 
-TOOL_DESCRIPTIONS = {
-    "google_drive": (
-        "Google Driveのファイル検索・閲覧・フォルダ名変更・移動・作成・ファイル作成。"
-        "「Googleドライブ」「フォルダ名変更」等のリクエストにはこのツールを使うこと。"
-        "create_fileアクションでタスクキューにタスクを投入できる。"
-    ),
-    "knowledge_search": "社内ナレッジ検索",
-    "file_reader": "ファイル読み取り",
-    "document_writer": "文書作成",
-    "web_search": "Web検索",
-    "calculator": "計算",
-}
-
-# Claude Codeスキルでしか実行できないタスクのリスト
-CLAUDE_CODE_SKILLS = {
-    "sales-pipeline": {"keywords": ["営業準備", "リサーチ", "提案書", "商談準備", "営業パイプライン"], "description": "企業リサーチ→提案書→スライド→商談台本の一括生成"},
-    "teleapo-list": {"keywords": ["テレアポ", "リスト", "架電", "スコアリング"], "description": "テレアポリスト作成・最適化"},
-    "training-report": {"keywords": ["研修報告", "報告書", "アンケート分析"], "description": "研修実施報告書の自動生成"},
-    "weekly-kpi": {"keywords": ["KPI", "PL", "売上レポート", "月次"], "description": "週次KPIレポート・月次PL自動生成"},
-    "curriculum": {"keywords": ["カリキュラム", "研修コース", "動画台本"], "description": "研修カリキュラム設計"},
-    "followup-email": {"keywords": ["フォローメール", "商談後メール"], "description": "商談後フォローメール生成"},
-}
-
-TASK_QUEUE_INSTRUCTIONS = """
-【タスクキュー機能】
-以下のタスクはClaude Code（ローカル環境）でしか実行できません。
-依頼を受けたら、google_driveツールのcreate_fileアクションでタスクファイルを作成してください。
-
-対象スキル:
-- sales-pipeline: 営業準備（リサーチ→提案書→スライド）
-- teleapo-list: テレアポリスト作成
-- training-report: 研修報告書生成
-- weekly-kpi: KPIレポート生成
-- curriculum: 研修カリキュラム設計
-- followup-email: フォローメール生成
-
-タスク投入方法:
-1. google_driveツールでタスクキュー/pending/フォルダのIDを確認（listアクション）
-2. create_fileアクションで以下のJSON形式のファイルを作成:
-   ファイル名: task_YYYYMMDD_HHMM.json
-   内容: {"skill": "スキル名", "target": "対象企業名等", "instructions": "具体的な指示", "status": "pending"}
-3. 「タスクを投入しました。Claude Codeが自動で処理します。完了したらGoogle Driveの商談先フォルダに成果物が保存されます」と報告
-
-タスク状況確認:
-- 「タスクの状況は？」と聞かれたらタスクキュー/done/フォルダを確認
-"""
-
-
 def build_system_prompt(employee: dict, employee_name: str, company_id: str = "hidane", public_mode: bool = False) -> str:
     """AI社員用の完全なシステムプロンプトを構築。
     public_mode=True の場合、外部公開向け（機密情報なし）のプロンプトを生成。
@@ -99,30 +51,19 @@ def build_system_prompt(employee: dict, employee_name: str, company_id: str = "h
 
     custom_section = f"\n\n{custom_context}" if custom_context else ""
 
-    # ツール説明を動的に構築
-    emp_tool_names = employee.get("tools", [])
-    tool_lines = []
-    for t in emp_tool_names:
-        desc = TOOL_DESCRIPTIONS.get(t)
-        if desc:
-            tool_lines.append(f"- {t}: {desc}")
-    tool_section = ""
-    if tool_lines:
+    # ツール活用指示
+    emp_tools = employee.get("tools", [])
+    if emp_tools:
         tool_section = (
-            "\n\n【あなたが使えるツール（必ず活用すること）】\n"
-            + "\n".join(tool_lines)
-            + "\n\n絶対に守ること：\n"
-            "- 上記のツールが使える場合、テキストで手順を説明するのではなく、必ずツールを実際に呼び出して実行すること\n"
-            "- 「できません」「権限がありません」「APIに接続できません」とは絶対に言わない\n"
+            "\n\n【ツール使用ルール】\n"
+            "あなたにはツールが接続されています。ファイル操作・検索・メール等を依頼されたら、ツールを呼び出して実行してください。\n"
+            "絶対に守ること：\n"
+            "- 「できません」「権限がありません」「APIに接続できません」とは言わない\n"
             "- <tool_use>タグをテキストとして出力しない（ツールはシステムが自動的に呼び出します）\n"
             "- ツール実行結果を推測・捏造しない。必ず実際にツールを呼び出すこと\n"
-            "- Google Driveのフォルダ名変更・ファイル検索などはgoogle_driveツールで実行可能"
         )
-
-    # google_driveツールがある場合、タスクキュー指示を追加
-    task_queue_section = ""
-    if "google_drive" in emp_tool_names:
-        task_queue_section = TASK_QUEUE_INSTRUCTIONS
+    else:
+        tool_section = ""
 
     return (
         f"{employee['system_prompt']}\n\n"
@@ -149,5 +90,4 @@ def build_system_prompt(employee: dict, employee_name: str, company_id: str = "h
         "ない場合は「その分析結果は私の手元にはまだ共有されていません。"
         "内容を教えていただければ対応します」と正直に答えてください。"
         f"{tool_section}"
-        f"{task_queue_section}"
     )
